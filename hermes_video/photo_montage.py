@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from .config import AppConfig, write_json_safe, write_text_safe
+from .ffmpeg_tools import command
 from .logger import get_logger
 
 GENERATED_DIRS = {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT_DECISIONS", "06_FCPXML", "07_APPLESCRIPT", "08_EXPORTS", ".git", "__pycache__"}
@@ -12,7 +13,7 @@ GENERATED_DIRS = {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT
 
 def _run(cmd: list[str]) -> None:
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(command(cmd), check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
         raise RuntimeError("ffmpeg/ffprobe not found. Install ffmpeg with: brew install ffmpeg") from exc
     except subprocess.CalledProcessError as exc:

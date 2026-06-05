@@ -26,7 +26,7 @@ def build_fcpxml(project: str | Path, edl_path: str | Path | None = None) -> tup
     log = get_logger(__name__)
     project_path = Path(project).expanduser().resolve()
     if edl_path is None:
-        candidates = sorted((project_path / "05_EDIT_DECISIONS").glob("edit_decision_list_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted((project_path / "05_EDIT_DECISIONS").glob("edit_decision_list_*.json"), key=lambda p: ("marketing_vertical" in p.name, p.stat().st_mtime), reverse=True)
         if not candidates:
             raise FileNotFoundError("No edit decision list found. Run build-edit first.")
         edl_path = candidates[0]

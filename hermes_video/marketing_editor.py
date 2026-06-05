@@ -5,23 +5,44 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from .config import write_json_safe, write_text_safe
+from .config import AppConfig, load_config, write_json_safe, write_text_safe
+from .ffmpeg_tools import command
 from .logger import get_logger
-from .video_renderer import AUDIO_EXTS, GENERATED_DIRS, VIDEO_EXTS, _has_audio, _orientation_for_asset, _safe_output, _video_filter
+from .media_scanner import iter_media_files
+from .metadata_extractor import scan_project
+from .models import EditDecision, EditDecisionList
+from .fcpxml_generator import build_fcpxml
+from .applescript_generator import build_applescript
+from .video_renderer import VIDEO_EXTS, _has_audio, _orientation_for_asset, _safe_output, _video_filter
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".webp", ".tif", ".tiff"}
 
 
 def _run(cmd: list[str]) -> None:
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(command(cmd), check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
         raise RuntimeError("ffmpeg/ffprobe not found. Install ffmpeg with: brew install ffmpeg") from exc
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{(exc.stderr or '')[-2500:]}") from exc
 
 
-def _load_assets(project_path: Path) -> tuple[list[dict], list[dict]]:
+def _manifest_is_stale(project_path: Path, config: AppConfig) -> bool:
+    manifest_path = project_path / "project_manifest.json"
+    if not manifest_path.exists():
+        return True
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except json.JSONDecodeError:
+        return True
+    manifest_sources = {str(Path(asset.get("source_path", "")).resolve()) for asset in manifest.get("assets", []) if asset.get("source_path")}
+    current_sources = {str(path.resolve()) for path in iter_media_files(project_path, config)}
+    return manifest_sources != current_sources
+
+
+def _load_assets(project_path: Path, config: AppConfig) -> tuple[list[dict], list[dict]]:
+    if _manifest_is_stale(project_path, config):
+        scan_project(project_path, config)
     manifest = json.loads((project_path / "project_manifest.json").read_text())
     videos: list[dict] = []
     images: list[dict] = []
@@ -236,9 +257,44 @@ def _plan_to_markdown(project_name: str, vertical_plan: list[dict], horizontal_p
     return "\n".join(lines)
 
 
-def render_marketing_edits(project: str | Path) -> dict:
+def _write_marketing_edl(project_path: Path, plan: list[dict], edit_format: str, timeline_name: str) -> Path:
+    timeline = 0.0
+    decisions: list[EditDecision] = []
+    for index, item in enumerate(plan, start=1):
+        asset = item["asset"]
+        duration = float(item["duration"])
+        in_seconds = float(item["start"]) if item["kind"] == "video" else 0.0
+        out_seconds = in_seconds + duration
+        title = f"{index:02d} {asset.get('file_name', Path(asset['source_path']).name)}"
+        decisions.append(EditDecision(
+            id=f"marketing_{index:04d}",
+            media_asset_id=str(asset.get("id") or f"asset_{index:04d}"),
+            source_path=str(asset["source_path"]),
+            in_seconds=round(in_seconds, 3),
+            out_seconds=round(out_seconds, 3),
+            timeline_position_seconds=round(timeline, 3),
+            decision_type=str(item["kind"]),
+            reason=str(item["reason"]),
+            title=title,
+            notes=f"Marketing edit {item['kind']} cut generated from source media.",
+        ))
+        timeline += duration
+    edl = EditDecisionList(
+        project_name=project_path.name,
+        format=edit_format,
+        timeline_name=timeline_name,
+        decisions=decisions,
+        total_estimated_duration_seconds=round(timeline, 3),
+    )
+    out = project_path / "05_EDIT_DECISIONS" / f"edit_decision_list_{edit_format}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    write_json_safe(out, edl.model_dump())
+    return out
+
+
+def render_marketing_edits(project: str | Path, config: AppConfig | None = None, *, build_handoff: bool = True) -> dict:
     project_path = Path(project).expanduser().resolve()
-    videos, images = _load_assets(project_path)
+    config = config or load_config(None)
+    videos, images = _load_assets(project_path, config)
     if not videos:
         raise ValueError("No video assets found for marketing edit")
     vertical_plan = _known_roadtrip_vertical_plan(videos, images) or _generic_vertical_plan(videos, images)
@@ -257,6 +313,17 @@ def render_marketing_edits(project: str | Path) -> dict:
         horizontal_path = project_path / "08_EXPORTS" / f"{project_path.name}_marketing_short_horizontal_1920x1080_{round(horizontal_duration)}s.mp4"
         outputs["horizontal_path"] = str(_render_plan(project_path, horizontal_plan, "horizontal", horizontal_path))
         outputs["horizontal_duration_seconds"] = round(horizontal_duration, 3)
+    if horizontal_plan:
+        horizontal_edl = _write_marketing_edl(project_path, horizontal_plan, "marketing_horizontal", f"{project_path.name} Marketing Horizontal")
+        outputs["horizontal_edl_path"] = str(horizontal_edl)
+    vertical_edl = _write_marketing_edl(project_path, vertical_plan, "marketing_vertical", f"{project_path.name} Marketing Vertical")
+    outputs["vertical_edl_path"] = str(vertical_edl)
+    if build_handoff:
+        fcpxml_path, fcpxml_summary_path = build_fcpxml(project_path, vertical_edl)
+        applescript_path = build_applescript(project_path, config)
+        outputs["fcpxml_path"] = str(fcpxml_path)
+        outputs["fcpxml_summary_path"] = str(fcpxml_summary_path)
+        outputs["applescript_path"] = str(applescript_path)
     outputs["generated_at"] = datetime.now().isoformat()
     summary_path = project_path / "08_EXPORTS" / "marketing_edit_summary.json"
     write_json_safe(summary_path, outputs)

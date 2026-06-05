@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from .ffmpeg_tools import command
 from .logger import get_logger
 
 
@@ -17,7 +18,7 @@ def extract_audio(source_path: Path, output_path: Path) -> Path:
         return output_path
     cmd = ["ffmpeg", "-y", "-i", str(source_path), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(output_path)]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(command(cmd), check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
         raise RuntimeError("ffmpeg not found. Install with: brew install ffmpeg") from exc
     except subprocess.CalledProcessError as exc:

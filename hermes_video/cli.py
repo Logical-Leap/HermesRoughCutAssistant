@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None):
             render_vertical=not args.horizontal_only,
         )
     elif args.command == "marketing-edit":
-        render_marketing_edits(args.project)
+        render_marketing_edits(args.project, config)
     elif args.command == "open-in-fcp":
         open_in_fcp(args.project, config)
     elif args.command in {"edit", "full"}:

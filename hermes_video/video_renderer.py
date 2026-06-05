@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from .config import write_json_safe
+from .ffmpeg_tools import command
 from .logger import get_logger
 from .models import EditDecisionList
 
@@ -16,7 +17,7 @@ GENERATED_DIRS = {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT
 
 def _run(cmd: list[str]) -> None:
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(command(cmd), check=True, capture_output=True, text=True)
     except FileNotFoundError as exc:
         raise RuntimeError("ffmpeg/ffprobe not found. Install ffmpeg with: brew install ffmpeg") from exc
     except subprocess.CalledProcessError as exc:
@@ -72,7 +73,7 @@ def _manifest_video_assets(project_path: Path) -> list[dict]:
 def _has_audio(path: str) -> bool:
     cmd = ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path]
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(command(cmd), check=True, capture_output=True, text=True)
         return bool(result.stdout.strip())
     except Exception:
         return False
@@ -185,7 +186,7 @@ def render_comprehensive_orientation_edits(project: str | Path, *, render_horizo
 def render_project(project: str | Path, edl_path: str | Path | None = None, *, render_horizontal: bool = True, render_vertical: bool = True) -> dict:
     log = get_logger(__name__)
     project_path = Path(project).expanduser().resolve()
-    if (project_path / "project_manifest.json").exists():
+    if edl_path is None and (project_path / "project_manifest.json").exists():
         videos = _manifest_video_assets(project_path)
         if videos:
             return render_comprehensive_orientation_edits(project_path, render_horizontal=render_horizontal, render_vertical=render_vertical)

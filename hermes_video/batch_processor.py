@@ -26,7 +26,7 @@ def process_project(project: str | Path, config: AppConfig, edit_format: str | N
     has_images = any(path.suffix.lower() in {e.lower() for e in config.supported_image_extensions} for path in media_files)
     if has_video:
         scan_project(project_path, config)
-        outputs = render_marketing_edits(project_path)
+        outputs = render_marketing_edits(project_path, config)
         return {"project": str(project_path), "status": "processed", "mode": "marketing_short", "media_files": len(media_files), "outputs": outputs}
     if has_images and not has_timed_media:
         scan_project(project_path, config)

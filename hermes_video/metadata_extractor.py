@@ -5,6 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 from .config import AppConfig, write_json_safe
+from .ffmpeg_tools import command
 from .logger import get_logger
 from .media_scanner import iter_media_files, classify_media
 from .models import MediaAsset
@@ -13,7 +14,7 @@ from .models import MediaAsset
 def _run_ffprobe(path: Path) -> dict:
     cmd = ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)]
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(command(cmd), check=True, capture_output=True, text=True)
         return json.loads(result.stdout or "{}")
     except FileNotFoundError as exc:
         raise RuntimeError("ffprobe not found. Install ffmpeg with: brew install ffmpeg") from exc
