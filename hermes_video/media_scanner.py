@@ -31,7 +31,7 @@ def iter_media_files(project_path: Path, config: AppConfig):
     clips/music directly into it. The older 01_RAW subfolder layout still works,
     but it is no longer required.
     """
-    extensions = {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions}
+    extensions = {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions + config.supported_image_extensions}
     search_root = project_path
     for path in sorted(search_root.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in extensions or path.name.startswith("."):
@@ -47,4 +47,6 @@ def classify_media(path: Path, config: AppConfig) -> str:
         return "video"
     if ext in {e.lower() for e in config.supported_audio_extensions}:
         return "audio"
+    if ext in {e.lower() for e in config.supported_image_extensions}:
+        return "image"
     return "unknown"

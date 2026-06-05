@@ -19,6 +19,7 @@ from .edit_decision_builder import build_edit_decisions
 from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript
 from .video_renderer import render_project
+from .photo_montage import render_photo_montage
 
 
 class RoughCutEventHandler(FileSystemEventHandler):
@@ -32,7 +33,7 @@ class RoughCutEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = Path(event.src_path)
-        extensions = {e.lower() for e in self.config.supported_video_extensions + self.config.supported_audio_extensions}
+        extensions = {e.lower() for e in self.config.supported_video_extensions + self.config.supported_audio_extensions + self.config.supported_image_extensions}
         if path.suffix.lower() not in extensions:
             return
         if any(part in {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT_DECISIONS", "06_FCPXML", "07_APPLESCRIPT", "08_EXPORTS", ".git"} for part in path.parts):
@@ -55,20 +56,14 @@ class RoughCutEventHandler(FileSystemEventHandler):
             if now - changed_at >= quiet_seconds:
                 self.pending.pop(project, None)
                 try:
-                    init_project(project)
-                    scan_project(project, self.config)
-                    transcribe_project(project, self.config)
-                    analyze_project(project, self.config)
-                    build_edit_decisions(project, self.config.default_edit_format, self.config)
-                    build_fcpxml(project)
-                    build_applescript(project, self.config)
-                    render_project(project)
+                    from .batch_processor import process_project
+                    process_project(project, self.config, self.config.default_edit_format)
                 except Exception as exc:
                     self.log.exception("Automatic processing failed for %s: %s", project, exc)
 
 
 def _project_media_snapshot(project: Path, config: AppConfig) -> tuple[int, float]:
-    extensions = {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions}
+    extensions = {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions + config.supported_image_extensions}
     generated = {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT_DECISIONS", "06_FCPXML", "07_APPLESCRIPT", "08_EXPORTS", ".git"}
     count = 0
     latest = 0.0

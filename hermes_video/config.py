@@ -21,6 +21,7 @@ class AppConfig(BaseModel):
     ])
     supported_video_extensions: list[str] = Field(default_factory=lambda: [".mov", ".mp4", ".m4v", ".mkv", ".avi", ".mts", ".mxf"])
     supported_audio_extensions: list[str] = Field(default_factory=lambda: [".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"])
+    supported_image_extensions: list[str] = Field(default_factory=lambda: [".jpg", ".jpeg", ".png", ".heic", ".webp", ".tif", ".tiff"])
     final_cut_pro_app_name: str = "Final Cut Pro"
 
 

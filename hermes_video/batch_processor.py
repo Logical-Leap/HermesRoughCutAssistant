@@ -12,6 +12,7 @@ from .edit_decision_builder import build_edit_decisions
 from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript
 from .video_renderer import render_project
+from .photo_montage import render_photo_montage
 
 
 def process_project(project: str | Path, config: AppConfig, edit_format: str | None = None) -> dict:
@@ -19,6 +20,12 @@ def process_project(project: str | Path, config: AppConfig, edit_format: str | N
     media_files = list(iter_media_files(project_path, config) or [])
     if not media_files:
         return {"project": str(project_path), "status": "skipped", "reason": "no media files"}
+    has_timed_media = any(path.suffix.lower() in {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions} for path in media_files)
+    has_images = any(path.suffix.lower() in {e.lower() for e in config.supported_image_extensions} for path in media_files)
+    if has_images and not has_timed_media:
+        scan_project(project_path, config)
+        outputs = render_photo_montage(project_path, config)
+        return {"project": str(project_path), "status": "processed", "mode": "photo_montage", "media_files": len(media_files), "outputs": outputs}
     scan_project(project_path, config)
     transcribe_project(project_path, config)
     analyze_project(project_path, config)

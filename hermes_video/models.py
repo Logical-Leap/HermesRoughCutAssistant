@@ -15,7 +15,7 @@ class MediaAsset(BaseModel):
     relative_path: str
     file_name: str
     file_extension: str
-    media_type: Literal["video", "audio", "unknown"]
+    media_type: Literal["video", "audio", "image", "unknown"]
     duration_seconds: float
     frame_rate: Optional[float] = None
     width: Optional[int] = None
