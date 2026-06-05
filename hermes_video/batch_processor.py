@@ -13,6 +13,7 @@ from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript
 from .video_renderer import render_project
 from .photo_montage import render_photo_montage
+from .marketing_editor import render_marketing_edits
 
 
 def process_project(project: str | Path, config: AppConfig, edit_format: str | None = None) -> dict:
@@ -25,8 +26,8 @@ def process_project(project: str | Path, config: AppConfig, edit_format: str | N
     has_images = any(path.suffix.lower() in {e.lower() for e in config.supported_image_extensions} for path in media_files)
     if has_video:
         scan_project(project_path, config)
-        outputs = render_project(project_path)
-        return {"project": str(project_path), "status": "processed", "mode": "comprehensive_orientation_video", "media_files": len(media_files), "outputs": outputs}
+        outputs = render_marketing_edits(project_path)
+        return {"project": str(project_path), "status": "processed", "mode": "marketing_short", "media_files": len(media_files), "outputs": outputs}
     if has_images and not has_timed_media:
         scan_project(project_path, config)
         outputs = render_photo_montage(project_path, config)

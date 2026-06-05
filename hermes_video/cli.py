@@ -11,6 +11,7 @@ from .edit_decision_builder import build_edit_decisions
 from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript, open_in_fcp
 from .video_renderer import render_project
+from .marketing_editor import render_marketing_edits
 from .batch_processor import process_project, process_all_projects
 from .folder_watcher import watch_projects
 
@@ -46,6 +47,8 @@ def main(argv: list[str] | None = None):
     p.add_argument("--edl", default=None)
     p.add_argument("--horizontal-only", action="store_true")
     p.add_argument("--vertical-only", action="store_true")
+    p = sub.add_parser("marketing-edit", help="Render an actually edited short-form marketing cut from source video highlights")
+    _project_arg(p)
     p = sub.add_parser("open-in-fcp"); _project_arg(p)
 
     p = sub.add_parser("edit", help="One-command workflow: scan, transcribe, analyze, build FCPXML, render horizontal + vertical MP4s")
@@ -94,6 +97,8 @@ def main(argv: list[str] | None = None):
             render_horizontal=not args.vertical_only,
             render_vertical=not args.horizontal_only,
         )
+    elif args.command == "marketing-edit":
+        render_marketing_edits(args.project)
     elif args.command == "open-in-fcp":
         open_in_fcp(args.project, config)
     elif args.command in {"edit", "full"}:
