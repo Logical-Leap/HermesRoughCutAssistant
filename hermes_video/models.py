@@ -20,6 +20,7 @@ class MediaAsset(BaseModel):
     frame_rate: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
+    rotation_degrees: int = 0
     video_codec: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_stream_count: int = 0

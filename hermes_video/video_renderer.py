@@ -47,6 +47,28 @@ def _video_filter(orientation: str) -> str:
     raise ValueError(f"Unsupported orientation: {orientation}")
 
 
+def _orientation_for_asset(asset: dict) -> str:
+    width = int(asset.get("width") or 0)
+    height = int(asset.get("height") or 0)
+    rotation = int(asset.get("rotation_degrees") or 0) % 180
+    if rotation == 90:
+        width, height = height, width
+    return "vertical" if height > width else "horizontal"
+
+
+def _manifest_video_assets(project_path: Path) -> list[dict]:
+    manifest_path = project_path / "project_manifest.json"
+    if not manifest_path.exists():
+        return []
+    data = json.loads(manifest_path.read_text())
+    videos = []
+    for asset in data.get("assets", []):
+        source = Path(asset.get("source_path", ""))
+        if asset.get("media_type") == "video" and source.suffix.lower() in VIDEO_EXTS and source.exists():
+            videos.append(asset)
+    return sorted(videos, key=lambda a: (a.get("creation_time") or "", a.get("relative_path") or a.get("file_name") or ""))
+
+
 def _has_audio(path: str) -> bool:
     cmd = ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path]
     try:
@@ -87,9 +109,86 @@ def _mix_music(base_video: Path, music: Path, output_path: Path) -> Path:
     return output_path
 
 
+def _render_video_assets(project_path: Path, assets: list[dict], orientation: str, final_output: Path, tmp_root: Path) -> Path:
+    log = get_logger(__name__)
+    seg_dir = tmp_root / orientation
+    seg_dir.mkdir(parents=True, exist_ok=True)
+    segment_paths: list[Path] = []
+    vf = _video_filter(orientation)
+    for index, asset in enumerate(assets, start=1):
+        source_path = asset["source_path"]
+        duration = float(asset.get("duration_seconds") or 0)
+        if duration <= 0:
+            continue
+        segment = seg_dir / f"segment_{index:04d}.mp4"
+        log.info("Rendering %s source clip %d/%d: %s", orientation, index, len(assets), source_path)
+        cmd = [
+            "ffmpeg", "-y", "-i", source_path,
+            "-vf", vf, "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(segment)
+        ]
+        if not bool(asset.get("has_audio")) or not _has_audio(source_path):
+            cmd = [
+                "ffmpeg", "-y", "-i", source_path,
+                "-f", "lavfi", "-t", str(duration), "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+                "-vf", vf, "-r", "30", "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(segment)
+            ]
+        _run(cmd)
+        segment_paths.append(segment)
+    if not segment_paths:
+        raise ValueError(f"No renderable {orientation} source video segments found")
+    concat_output = tmp_root / f"{orientation}_concat.mp4"
+    _concat_segments(segment_paths, tmp_root / f"{orientation}_concat.txt", concat_output)
+    music = _music_files(project_path)
+    music_path = music[0] if music else None
+    _safe_output(final_output)
+    if music_path:
+        _mix_music(concat_output, music_path, final_output)
+    else:
+        shutil.copy2(concat_output, final_output)
+    return final_output
+
+
+def render_comprehensive_orientation_edits(project: str | Path, *, render_horizontal: bool = True, render_vertical: bool = True) -> dict:
+    project_path = Path(project).expanduser().resolve()
+    videos = _manifest_video_assets(project_path)
+    if not videos:
+        raise ValueError("No source video assets found in project manifest")
+    grouped = {"horizontal": [], "vertical": []}
+    for asset in videos:
+        grouped[_orientation_for_asset(asset)].append(asset)
+    tmp_root = project_path / "08_EXPORTS" / ".render_tmp"
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    outputs: dict[str, str | int | None] = {
+        "mode": "comprehensive_orientation_video",
+        "horizontal_source_clip_count": len(grouped["horizontal"]),
+        "vertical_source_clip_count": len(grouped["vertical"]),
+    }
+    if render_horizontal and grouped["horizontal"]:
+        outputs["horizontal"] = str(_render_video_assets(project_path, grouped["horizontal"], "horizontal", project_path / "08_EXPORTS" / f"{project_path.name}_horizontal_1920x1080.mp4", tmp_root))
+    if render_vertical and grouped["vertical"]:
+        outputs["vertical"] = str(_render_video_assets(project_path, grouped["vertical"], "vertical", project_path / "08_EXPORTS" / f"{project_path.name}_vertical_1080x1920.mp4", tmp_root))
+    summary = {
+        "project_name": project_path.name,
+        "outputs": outputs,
+        "generated_at": datetime.now().isoformat(),
+    }
+    summary_path = project_path / "08_EXPORTS" / "render_summary.json"
+    write_json_safe(summary_path, summary)
+    outputs["summary"] = str(summary_path)
+    return outputs
+
+
 def render_project(project: str | Path, edl_path: str | Path | None = None, *, render_horizontal: bool = True, render_vertical: bool = True) -> dict:
     log = get_logger(__name__)
     project_path = Path(project).expanduser().resolve()
+    if (project_path / "project_manifest.json").exists():
+        videos = _manifest_video_assets(project_path)
+        if videos:
+            return render_comprehensive_orientation_edits(project_path, render_horizontal=render_horizontal, render_vertical=render_vertical)
     edl_file = Path(edl_path) if edl_path else _latest_edl(project_path)
     edl = EditDecisionList.model_validate_json(edl_file.read_text())
     video_decisions = [d for d in edl.decisions if Path(d.source_path).suffix.lower() in VIDEO_EXTS]

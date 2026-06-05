@@ -21,7 +21,12 @@ def process_project(project: str | Path, config: AppConfig, edit_format: str | N
     if not media_files:
         return {"project": str(project_path), "status": "skipped", "reason": "no media files"}
     has_timed_media = any(path.suffix.lower() in {e.lower() for e in config.supported_video_extensions + config.supported_audio_extensions} for path in media_files)
+    has_video = any(path.suffix.lower() in {e.lower() for e in config.supported_video_extensions} for path in media_files)
     has_images = any(path.suffix.lower() in {e.lower() for e in config.supported_image_extensions} for path in media_files)
+    if has_video:
+        scan_project(project_path, config)
+        outputs = render_project(project_path)
+        return {"project": str(project_path), "status": "processed", "mode": "comprehensive_orientation_video", "media_files": len(media_files), "outputs": outputs}
     if has_images and not has_timed_media:
         scan_project(project_path, config)
         outputs = render_photo_montage(project_path, config)

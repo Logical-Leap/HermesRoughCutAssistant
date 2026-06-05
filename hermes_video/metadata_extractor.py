@@ -48,6 +48,22 @@ def _frame_rate(value: str | None) -> float | None:
         return None
 
 
+def _rotation_degrees(stream: dict) -> int:
+    tags = stream.get("tags") or {}
+    if tags.get("rotate") is not None:
+        try:
+            return int(float(tags["rotate"])) % 360
+        except (TypeError, ValueError):
+            return 0
+    for item in stream.get("side_data_list") or []:
+        if item.get("rotation") is not None:
+            try:
+                return int(float(item["rotation"])) % 360
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
 def extract_asset(project_path: Path, media_path: Path, config: AppConfig) -> MediaAsset:
     probe = _run_ffprobe(media_path)
     streams = probe.get("streams", [])
@@ -75,6 +91,7 @@ def extract_asset(project_path: Path, media_path: Path, config: AppConfig) -> Me
         frame_rate=_frame_rate(video.get("avg_frame_rate") or video.get("r_frame_rate")),
         width=video.get("width"),
         height=video.get("height"),
+        rotation_degrees=_rotation_degrees(video),
         video_codec=video.get("codec_name"),
         audio_codec=audio_codec,
         audio_stream_count=len(audio_streams),
