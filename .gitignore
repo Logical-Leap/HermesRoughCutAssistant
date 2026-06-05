@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Large/raw/generated media artifacts
+sample_project/01_RAW/**/*
+!sample_project/01_RAW/**/.gitkeep
+sample_project/02_AUDIO_EXTRACTS/**/*
+!sample_project/02_AUDIO_EXTRACTS/**/.gitkeep
+sample_project/03_TRANSCRIPTS/**/*
+!sample_project/03_TRANSCRIPTS/**/.gitkeep
+sample_project/04_ANALYSIS/**/*
+!sample_project/04_ANALYSIS/**/.gitkeep
+sample_project/05_EDIT_DECISIONS/**/*
+!sample_project/05_EDIT_DECISIONS/**/.gitkeep
+sample_project/06_FCPXML/**/*
+!sample_project/06_FCPXML/**/.gitkeep
+sample_project/07_APPLESCRIPT/**/*
+!sample_project/07_APPLESCRIPT/**/.gitkeep
+sample_project/08_EXPORTS/**/*
+!sample_project/08_EXPORTS/**/.gitkeep
+
+# Runtime project artifacts
+project_manifest.json
+*.bak

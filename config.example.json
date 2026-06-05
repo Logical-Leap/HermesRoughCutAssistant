@@ -1,0 +1,14 @@
+{
+  "projects_root": "~/VideoProjects",
+  "transcription_engine": "faster-whisper",
+  "whisper_model": "base",
+  "language": "en",
+  "default_edit_format": "youtube_longform",
+  "min_clip_duration_seconds": 8,
+  "max_clip_duration_seconds": 90,
+  "filler_words": ["um", "uh", "like", "you know", "kind of", "sort of", "basically", "actually"],
+  "hook_phrases": ["the problem is", "the biggest thing", "what people do not understand", "the mistake is", "the real issue", "here is the solution", "the way I would do it", "this is why", "the point is"],
+  "supported_video_extensions": [".mov", ".mp4", ".m4v", ".mkv", ".avi", ".mts", ".mxf"],
+  "supported_audio_extensions": [".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"],
+  "final_cut_pro_app_name": "Final Cut Pro"
+}

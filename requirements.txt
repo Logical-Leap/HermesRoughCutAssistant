@@ -1,0 +1,4 @@
+pydantic>=2.6
+watchdog>=4.0
+faster-whisper>=1.0.0
+rich>=13.7
