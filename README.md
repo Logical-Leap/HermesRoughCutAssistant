@@ -136,13 +136,40 @@ Vertical only:
 python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01" --vertical-only
 ```
 
-## Watch mode
+## Watch mode / automatic processing
+
+Install the background watcher so dropping files into project folders automatically kicks off processing:
+
+```bash
+scripts/install_watcher_launch_agent.sh "/Users/chandler/VideoProjects"
+```
+
+On this Mac, if you use the default home folder, that path is usually:
+
+```bash
+scripts/install_watcher_launch_agent.sh "$HOME/VideoProjects"
+```
+
+The watcher runs as a macOS LaunchAgent and logs to:
+
+```text
+logs/watch.out.log
+logs/watch.err.log
+```
+
+If you already dropped media before the watcher was running, process all existing project folders once:
+
+```bash
+python run.py process-all --projects-root "/Users/chandler/VideoProjects" --format youtube_longform
+```
+
+Manual foreground watch still works:
 
 ```bash
 python run.py watch --projects-root "/Users/chandler/VideoProjects"
 ```
 
-Now the watcher treats each top-level folder as a project. When new video/audio files are added to a project folder, it processes that project after the folder is quiet.
+Now each top-level folder is treated as a project. When new video/audio files are added to a project folder, it processes that project after the folder is quiet.
 
 ## Edit formats
 

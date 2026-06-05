@@ -11,6 +11,7 @@ from .edit_decision_builder import build_edit_decisions
 from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript, open_in_fcp
 from .video_renderer import render_project
+from .batch_processor import process_project, process_all_projects
 from .folder_watcher import watch_projects
 
 
@@ -19,14 +20,7 @@ def _project_arg(parser):
 
 
 def _run_edit(project: str, edit_format: str, config) -> None:
-    init_project(project)
-    scan_project(project, config)
-    transcribe_project(project, config)
-    analyze_project(project, config)
-    build_edit_decisions(project, edit_format, config)
-    build_fcpxml(project)
-    build_applescript(project, config)
-    render_project(project)
+    process_project(project, config, edit_format)
 
 
 def main(argv: list[str] | None = None):
@@ -67,6 +61,11 @@ def main(argv: list[str] | None = None):
     p = sub.add_parser("watch")
     p.add_argument("--projects-root", required=True)
 
+    p = sub.add_parser("process-all", help="Process every project folder under the projects root that contains media")
+    p.add_argument("--projects-root", required=True)
+    p.add_argument("--format", default=None)
+    p.add_argument("--engine", help="Override transcription engine")
+
     args = parser.parse_args(argv)
     config = load_config(args.config)
     if getattr(args, "engine", None):
@@ -101,6 +100,8 @@ def main(argv: list[str] | None = None):
         _run_edit(args.project, args.format or config.default_edit_format, config)
     elif args.command == "watch":
         watch_projects(args.projects_root, config)
+    elif args.command == "process-all":
+        process_all_projects(args.projects_root, config, args.format or config.default_edit_format)
 
 
 if __name__ == "__main__":
