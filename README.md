@@ -1,41 +1,18 @@
 # Hermes Rough Cut Assistant
 
-Hermes Rough Cut Assistant is a local macOS automation tool for Final Cut Pro. It takes source media from disk, transcribes dialogue, analyzes clip metadata, creates a rough cut plan, writes an edit decision list, generates FCPXML, and prepares an AppleScript handoff into Final Cut Pro.
+Hermes Rough Cut Assistant is a local macOS video-project folder workflow. You create one folder that contains all your video projects, make a new folder for each edit, drop clips and music directly into that project folder, and run one command. Hermes builds a rough edit, renders horizontal and vertical MP4 exports, and creates an editable Final Cut Pro XML handoff so you can change the edit in Final Cut Pro.
 
-It is built for deterministic, file-based workflows. No fragile GUI clicking. No pretending to replace editors. The goal is simple: give you a clean starting timeline so you can spend more time editing and less time assembling.
+The system is intentionally file-based. It does not click around Final Cut Pro. It renders preview/final MP4s with ffmpeg and creates FCPXML for the editable Final Cut Pro timeline.
 
-## What it does
-
-- Creates a repeatable project folder scaffold.
-- Scans raw footage with `ffprobe`.
-- Writes `project_manifest.json` with paths, durations, codecs, frame rates, resolution, audio streams, creation time, camera group, and checksums.
-- Extracts mono 16 kHz WAV audio for transcription.
-- Transcribes speech with `faster-whisper` or `whisper.cpp`.
-- Writes transcript JSON and Markdown with segment timestamps.
-- Analyzes transcripts for hooks, strong thesis statements, weak sections, filler-heavy sections, repeated starts, B-roll notes, and rough cut sections.
-- Builds a deterministic edit decision list.
-- Generates FCPXML with source media references, sequential clips, and markers.
-- Generates AppleScript to open the FCPXML in Final Cut Pro.
-- Watches a projects root and processes new footage automatically.
-
-## What it does not do
-
-- It does not replace a human editor.
-- It does not modify Final Cut Pro libraries directly.
-- It does not delete raw footage.
-- It does not click around the Final Cut Pro interface.
-- It does not attempt advanced visual scene understanding in this first version.
-
-## Folder structure
+## The simple workflow
 
 ```text
 VideoProjects/
-  ProjectName/
-    01_RAW/
-      A_CAM/
-      B_CAM/
-      IPHONE/
-      AUDIO/
+  Client Interview/
+    clip_001.mov
+    clip_002.mov
+    broll.mp4
+    background_music.wav
     02_AUDIO_EXTRACTS/
     03_TRANSCRIPTS/
     04_ANALYSIS/
@@ -43,12 +20,29 @@ VideoProjects/
     06_FCPXML/
     07_APPLESCRIPT/
     08_EXPORTS/
-    project_manifest.json
 ```
+
+You do not have to use `01_RAW` anymore. Just drop media into the project folder. The older `01_RAW/A_CAM/B_CAM/IPHONE/AUDIO` layout still works if you want it.
+
+## What it now produces
+
+For each project, Hermes can produce:
+
+- `08_EXPORTS/Project_horizontal_1920x1080.mp4` — horizontal render
+- `08_EXPORTS/Project_vertical_1080x1920.mp4` — vertical render
+- `06_FCPXML/Project_rough_cut.fcpxml` — editable Final Cut Pro XML timeline
+- `07_APPLESCRIPT/import_to_final_cut.applescript` — opens that XML in Final Cut Pro
+- `project_manifest.json` — scanned media metadata
+- `03_TRANSCRIPTS/*.md` and `*.json` — transcripts
+- `04_ANALYSIS/transcript_analysis.md` — why clips were selected
+- `05_EDIT_DECISIONS/*.json` — the cut list used for rendering and FCPXML
+
+Important: Final Cut Pro does not expose a normal `.fcpbundle` project-file generator for tools like this. The correct editable handoff is FCPXML. Importing the FCPXML into Final Cut Pro creates the editable project/timeline inside your Final Cut library.
 
 ## Installation
 
 ```bash
+gh repo clone Logical-Leap/HermesRoughCutAssistant
 cd HermesRoughCutAssistant
 chmod +x scripts/install_dependencies.sh scripts/run_demo.sh
 scripts/install_dependencies.sh
@@ -57,59 +51,102 @@ source .venv/bin/activate
 
 The installer uses Homebrew for `ffmpeg`, creates `.venv`, and installs Python requirements.
 
-## Required macOS permissions
-
-- Terminal or your shell app needs file access to your media/project folders.
-- Final Cut Pro must be installed for `open-in-fcp`.
-- macOS may ask for Automation permission when `osascript` tells Final Cut Pro to open the generated FCPXML. Approve it in System Settings -> Privacy & Security -> Automation if prompted.
-
-## ffmpeg installation
+## Create your video projects folder
 
 ```bash
-brew install ffmpeg
-ffmpeg -version
-ffprobe -version
+python run.py setup-root --projects-root "/Users/chandler/VideoProjects"
 ```
 
-## Whisper/transcription setup
-
-Default engine is `faster-whisper`:
+Then create one folder per edit:
 
 ```bash
-source .venv/bin/activate
-python -m pip install faster-whisper
+mkdir -p "/Users/chandler/VideoProjects/Client Interview 01"
 ```
 
-You can also use whisper.cpp if `whisper-cli` is installed and available on `PATH`; set `transcription_engine` to `whisper.cpp` in `config.json`.
+Drop clips/music directly into that folder:
 
-For metadata-only demos without speech transcription, use `--engine none`.
-
-## Configuration
-
-Copy the example config if you want local overrides:
-
-```bash
-cp config.example.json config.json
+```text
+/Users/chandler/VideoProjects/Client Interview 01/interview_a_cam.mov
+/Users/chandler/VideoProjects/Client Interview 01/interview_b_cam.mov
+/Users/chandler/VideoProjects/Client Interview 01/broll_warehouse.mp4
+/Users/chandler/VideoProjects/Client Interview 01/background_music.wav
 ```
 
-Safe defaults include supported file extensions, hook phrases, filler words, clip duration limits, and the Final Cut Pro app name.
+Music detection is filename/folder-name based. Name background tracks something like `music.wav`, `background_music.mp3`, `soundtrack.m4a`, or put them in a `Music/` folder.
 
-## Commands
+## One command to edit and render
 
 ```bash
-python run.py init --project "/Users/chandler/VideoProjects/MyProject"
-python run.py scan --project "/Users/chandler/VideoProjects/MyProject"
-python run.py transcribe --project "/Users/chandler/VideoProjects/MyProject"
-python run.py analyze --project "/Users/chandler/VideoProjects/MyProject"
-python run.py build-edit --project "/Users/chandler/VideoProjects/MyProject" --format "youtube_longform"
-python run.py build-fcpxml --project "/Users/chandler/VideoProjects/MyProject"
-python run.py build-applescript --project "/Users/chandler/VideoProjects/MyProject"
-python run.py open-in-fcp --project "/Users/chandler/VideoProjects/MyProject"
-python run.py full --project "/Users/chandler/VideoProjects/MyProject" --format "youtube_longform"
+python run.py edit --project "/Users/chandler/VideoProjects/Client Interview 01" --format youtube_longform
+```
+
+That command runs the whole pipeline:
+
+1. Creates generated-output folders.
+2. Scans all clips/music in the project folder.
+3. Extracts audio from video clips.
+4. Transcribes speech.
+5. Analyzes transcript moments.
+6. Builds an edit decision list.
+7. Generates FCPXML for Final Cut Pro.
+8. Generates AppleScript to open the FCPXML.
+9. Renders horizontal MP4.
+10. Renders vertical MP4.
+11. Mixes detected music quietly under the render when a music file exists.
+
+The old command still works too:
+
+```bash
+python run.py full --project "/Users/chandler/VideoProjects/Client Interview 01" --format youtube_longform
+```
+
+`full` is now an alias for `edit`.
+
+## Open the editable cut in Final Cut Pro
+
+```bash
+python run.py open-in-fcp --project "/Users/chandler/VideoProjects/Client Interview 01"
+```
+
+Or manually import:
+
+1. Open Final Cut Pro.
+2. File -> Import -> XML.
+3. Select `06_FCPXML/Client Interview 01_rough_cut.fcpxml`.
+4. Final Cut Pro creates an editable project/timeline.
+5. Trim, rearrange, relink, color, mix, title, and finish inside Final Cut Pro.
+
+## Render only
+
+If you already have an edit decision list and only want exports:
+
+```bash
+python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01"
+```
+
+Horizontal only:
+
+```bash
+python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01" --horizontal-only
+```
+
+Vertical only:
+
+```bash
+python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01" --vertical-only
+```
+
+## Watch mode
+
+```bash
 python run.py watch --projects-root "/Users/chandler/VideoProjects"
 ```
 
-Supported edit formats:
+Now the watcher treats each top-level folder as a project. When new video/audio files are added to a project folder, it processes that project after the folder is quiet.
+
+## Edit formats
+
+Supported formats:
 
 - `youtube_longform`
 - `youtube_short`
@@ -118,60 +155,56 @@ Supported edit formats:
 - `vlog`
 - `generic_rough_cut`
 
-## Demo mode
+Example:
+
+```bash
+python run.py edit --project "/Users/chandler/VideoProjects/Testimonial" --format client_testimonial
+```
+
+## Demo
 
 ```bash
 source .venv/bin/activate
 scripts/run_demo.sh
 ```
 
-The demo initializes `sample_project`, creates a tiny generated test video if `ffmpeg` is available, scans it, runs metadata-only transcription, analyzes, builds an EDL, generates FCPXML, and writes AppleScript.
+The demo creates a sample clip and music file directly in `sample_project/`, runs the full edit command, renders horizontal and vertical MP4s, and writes FCPXML.
 
-## Final Cut Pro workflow
+## Required macOS permissions
 
-1. Drop camera/audio files into `01_RAW` subfolders.
-2. Run the full pipeline.
-3. Review `04_ANALYSIS/transcript_analysis.md`.
-4. Review `05_EDIT_DECISIONS/*.json`.
-5. Import `06_FCPXML/*.fcpxml` into Final Cut Pro, or run `open-in-fcp`.
-6. Finish pacing, trimming, color, audio mix, titles, and delivery inside Final Cut Pro.
+- Terminal or your shell needs file access to the video project folders.
+- Final Cut Pro must be installed for `open-in-fcp`.
+- macOS may ask for Automation permission when `osascript` tells Final Cut Pro to open the generated FCPXML. Approve it in System Settings -> Privacy & Security -> Automation.
 
-## Manual FCPXML import
+## What it does not do
 
-In Final Cut Pro:
-
-1. Open Final Cut Pro.
-2. Choose File -> Import -> XML.
-3. Select the generated file in `06_FCPXML`.
-4. Review the event/project and relink media if your storage paths changed.
-
-## Safety behavior
-
-- Raw footage is never deleted.
-- Existing generated files are backed up with timestamped `.bak` suffixes before overwrite.
-- The system only writes reviewable artifacts: manifest, audio extracts, transcripts, analysis, EDL, FCPXML, and AppleScript.
-- Generated outputs are reproducible from source media, manifest, transcripts, and EDL files.
+- It does not delete raw footage.
+- It does not modify existing Final Cut libraries directly.
+- It does not click around the Final Cut Pro UI.
+- It does not guarantee a polished human-quality final edit. It produces an automated rough edit plus render outputs.
+- It does not generate a native `.fcpbundle`; it generates FCPXML, which is the safe editable interchange format Final Cut Pro imports.
 
 ## Troubleshooting
 
-- `ffprobe not found`: run `brew install ffmpeg`.
-- `faster-whisper is not installed`: run `scripts/install_dependencies.sh` or `python -m pip install faster-whisper`.
-- `No edit decision list found`: run `build-edit` before `build-fcpxml`.
-- Empty transcripts in demo: expected when using `--engine none`. Use faster-whisper for real speech.
-- Final Cut Pro does not open: check the generated AppleScript path, install Final Cut Pro, and approve macOS Automation permission.
+- `ffprobe not found` or `ffmpeg not found`: run `brew install ffmpeg`.
+- `faster-whisper is not installed`: run `scripts/install_dependencies.sh`.
+- Empty transcripts in demo: expected when using `--engine none`; real projects use faster-whisper by default.
+- Render fails on a strange codec: transcode source clips to ProRes or H.264 and rerun.
 - FCPXML imports but media is offline: keep source media at the original paths or relink media in Final Cut Pro.
+- Final Cut Pro does not open: run manual XML import or approve Automation permission.
 
-## Extending with more agents
+## The practical version
 
-The pipeline is modular:
+For everyday use:
 
-- Add new analysis agents after transcript generation and before EDL creation.
-- Write new agent outputs into `04_ANALYSIS`.
-- Keep intermediate files deterministic and inspectable.
-- Add new edit formats in `edit_decision_builder.py`.
-- Add richer timeline features in `fcpxml_generator.py`.
-- Preserve the rule: filesystem artifacts are source of truth, Final Cut Pro import is a handoff, and the editor remains the final creative decision maker.
+```bash
+cd HermesRoughCutAssistant
+source .venv/bin/activate
+python run.py setup-root --projects-root "/Users/chandler/VideoProjects"
+mkdir -p "/Users/chandler/VideoProjects/My New Video"
+# Drop all clips and music into /Users/chandler/VideoProjects/My New Video
+python run.py edit --project "/Users/chandler/VideoProjects/My New Video" --format youtube_longform
+python run.py open-in-fcp --project "/Users/chandler/VideoProjects/My New Video"
+```
 
-## Marketing promise
-
-Drop in footage. Get a Final Cut Pro timeline you can start editing. Hermes handles the repetitive setup work before the real edit begins.
+Final renders are in `08_EXPORTS`. Editable Final Cut handoff is in `06_FCPXML`.

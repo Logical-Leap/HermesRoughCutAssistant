@@ -18,6 +18,7 @@ from .transcript_analyzer import analyze_project
 from .edit_decision_builder import build_edit_decisions
 from .fcpxml_generator import build_fcpxml
 from .applescript_generator import build_applescript
+from .video_renderer import render_project
 
 
 class RoughCutEventHandler(FileSystemEventHandler):
@@ -31,11 +32,15 @@ class RoughCutEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = Path(event.src_path)
-        if "01_RAW" in path.parts:
-            project = self._project_for(path)
-            if project:
-                self.pending[project] = time.time()
-                self.log.info("Queued project after new media: %s", project)
+        extensions = {e.lower() for e in self.config.supported_video_extensions + self.config.supported_audio_extensions}
+        if path.suffix.lower() not in extensions:
+            return
+        if any(part in {"02_AUDIO_EXTRACTS", "03_TRANSCRIPTS", "04_ANALYSIS", "05_EDIT_DECISIONS", "06_FCPXML", "07_APPLESCRIPT", "08_EXPORTS", ".git"} for part in path.parts):
+            return
+        project = self._project_for(path)
+        if project:
+            self.pending[project] = time.time()
+            self.log.info("Queued project after new media: %s", project)
 
     def _project_for(self, path: Path) -> Path | None:
         try:
@@ -57,6 +62,7 @@ class RoughCutEventHandler(FileSystemEventHandler):
                     build_edit_decisions(project, self.config.default_edit_format, self.config)
                     build_fcpxml(project)
                     build_applescript(project, self.config)
+                    render_project(project)
                 except Exception as exc:
                     self.log.exception("Automatic processing failed for %s: %s", project, exc)
 

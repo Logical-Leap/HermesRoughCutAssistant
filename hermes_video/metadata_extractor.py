@@ -56,7 +56,10 @@ def extract_asset(project_path: Path, media_path: Path, config: AppConfig) -> Me
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     duration = float(fmt.get("duration") or video.get("duration") or (audio_streams[0].get("duration") if audio_streams else 0) or 0)
     rel = media_path.relative_to(project_path)
-    raw_rel = media_path.relative_to(project_path / "01_RAW")
+    try:
+        raw_rel = media_path.relative_to(project_path / "01_RAW")
+    except ValueError:
+        raw_rel = media_path.relative_to(project_path)
     camera_group = raw_rel.parts[0] if len(raw_rel.parts) > 1 else None
     asset_id = hashlib.sha1(str(rel).encode("utf-8")).hexdigest()[:12]
     tags = fmt.get("tags", {}) or video.get("tags", {})

@@ -76,6 +76,10 @@ def transcribe_project(project: str | Path, config: AppConfig) -> list[Path]:
         if not asset.get("has_audio"):
             log.info("Skipping transcription for silent asset: %s", asset.get("file_name"))
             continue
+        name_for_music_check = (asset.get("file_name", "") + " " + asset.get("relative_path", "")).lower()
+        if asset.get("media_type") == "audio" and any(token in name_for_music_check for token in ["music", "song", "soundtrack", "score"]):
+            log.info("Skipping transcription for likely music bed: %s", asset.get("file_name"))
+            continue
         source = Path(asset["source_path"])
         audio_path = source if asset.get("media_type") == "audio" else extract_audio(source, audio_extract_path(project_path, asset["id"]))
         engine = config.transcription_engine.lower()

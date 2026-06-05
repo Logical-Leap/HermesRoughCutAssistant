@@ -10,6 +10,12 @@ venv/
 .DS_Store
 
 # Large/raw/generated media artifacts
+sample_project/*.mp4
+sample_project/*.mov
+sample_project/*.m4v
+sample_project/*.wav
+sample_project/*.mp3
+sample_project/*.m4a
 sample_project/01_RAW/**/*
 !sample_project/01_RAW/**/.gitkeep
 sample_project/02_AUDIO_EXTRACTS/**/*
