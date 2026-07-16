@@ -29,7 +29,21 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     if config_path:
         path = Path(config_path).expanduser()
         if path.exists():
+            if path.suffix.lower() == ".toml":
+                import tomllib
+                raw = tomllib.loads(path.read_text())
+                data = {
+                    "projects_root": raw.get("projects", {}).get("root", AppConfig().projects_root),
+                    "transcription_engine": raw.get("transcription", {}).get("engine", AppConfig().transcription_engine),
+                    "whisper_model": raw.get("transcription", {}).get("model", AppConfig().whisper_model),
+                    "language": raw.get("transcription", {}).get("language", AppConfig().language),
+                    "default_edit_format": raw.get("editing", {}).get("default_format", AppConfig().default_edit_format),
+                }
+                return AppConfig.model_validate(data)
             return AppConfig.model_validate_json(path.read_text())
+    local_toml = Path("config.toml")
+    if local_toml.exists():
+        return load_config(local_toml)
     local = Path("config.json")
     if local.exists():
         return AppConfig.model_validate_json(local.read_text())

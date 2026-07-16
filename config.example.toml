@@ -1,0 +1,46 @@
+[projects]
+root = "~/VideoProjects"
+
+[transcription]
+engine = "faster-whisper"
+model = "base"
+language = "en"
+word_timestamps = true
+
+[analysis]
+scene_threshold = 0.35
+silence_db = -38
+min_silence_seconds = 0.35
+
+[editorial]
+provider = "deterministic"
+endpoint_env = "HERMES_EDITORIAL_ENDPOINT"
+model_env = "HERMES_EDITORIAL_MODEL"
+api_key_env = "HERMES_EDITORIAL_API_KEY"
+max_calls = 4
+max_tokens = 12000
+max_cost_usd = 1.0
+max_retries = 2
+
+[editing]
+default_format = "youtube_longform"
+default_mode = "conservative"
+target_duration_seconds = 0
+never_cut_mid_word = true
+
+[fcpxml]
+version = "1.10"
+default_fps = "30000/1001"
+width = 1920
+height = 1080
+
+[review]
+host = "127.0.0.1"
+port = 8765
+
+[rendering]
+enabled = false
+horizontal_width = 1920
+horizontal_height = 1080
+vertical_width = 1080
+vertical_height = 1920

@@ -101,3 +101,114 @@ class FinalCutProject(BaseModel):
     fcpxml_path: str
     edit_decision_list_path: str
     generated_at: str = Field(default_factory=now_iso)
+
+
+class Project(BaseModel):
+    id: str
+    name: str
+    path: str
+    created_at: str = Field(default_factory=now_iso)
+
+
+class TranscriptWord(BaseModel):
+    id: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    text: str
+    confidence: float = 0.0
+    speaker_label: Optional[str] = None
+
+
+class TranscriptSentence(BaseModel):
+    id: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    text: str
+    word_ids: list[str] = Field(default_factory=list)
+    speaker_label: Optional[str] = None
+
+
+class Scene(BaseModel):
+    id: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    confidence: float = 0.0
+
+
+class AudioRegion(BaseModel):
+    id: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    kind: Literal["speech", "silence", "music", "clipping", "noise", "applause", "unknown"]
+
+
+class RetakeGroup(BaseModel):
+    id: str
+    unit_ids: list[str]
+    preferred_unit_id: str
+    alternate_unit_ids: list[str] = Field(default_factory=list)
+    reason: str
+
+
+class EditorialUnit(BaseModel):
+    id: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    text: str = ""
+    transcript_sentence_ids: list[str] = Field(default_factory=list)
+    scene_ids: list[str] = Field(default_factory=list)
+    audio_region_ids: list[str] = Field(default_factory=list)
+    topic: str = "general"
+    purpose: str = "support"
+    confidence: float = 0.0
+    complete: bool = True
+
+
+DecisionAction = Literal["keep", "trim", "remove", "reorder", "alternate", "short_candidate", "broll_placeholder"]
+TimelineMode = Literal["conservative", "aggressive", "short_vertical", "short_horizontal", "human_final"]
+
+
+class V2EditDecision(BaseModel):
+    id: str
+    editorial_unit_id: str
+    action: DecisionAction
+    reason: str
+    source_path: str = ""
+    media_asset_id: str = ""
+    in_seconds: float = 0.0
+    out_seconds: float = 0.0
+    timeline_position_seconds: float = 0.0
+    alternate_unit_ids: list[str] = Field(default_factory=list)
+    approved: Optional[bool] = None
+    notes: str = ""
+
+
+class TimelineVersion(BaseModel):
+    id: str
+    project_id: str
+    mode: TimelineMode
+    status: Literal["draft", "preferred", "approved", "exported"] = "draft"
+    format: str = "youtube_longform"
+    target_duration_seconds: Optional[float] = None
+    decisions: list[V2EditDecision] = Field(default_factory=list)
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ShortCandidate(BaseModel):
+    id: str
+    orientation: Literal["vertical", "horizontal"]
+    title: str
+    hook: str
+    caption: str
+    description: str
+    media_asset_id: str
+    start_seconds: float
+    end_seconds: float
+    confidence: float = Field(ge=0, le=1)
+    context_warning: str = ""
+    reframe_notes: str = "Center crop is a preview; verify subject framing manually."
