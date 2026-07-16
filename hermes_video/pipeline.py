@@ -22,7 +22,7 @@ def _project_id(path: Path) -> str:
 def ingest_project(project: str | Path, config: AppConfig) -> dict[str, Any]:
     path = init_project(project)
     store, pid = ProjectStore(path), _project_id(path)
-    p = Project(id=pid, name=path.name, path=str(path))
+    p = Project(id=pid, name=path.name, path=str(path), root_path=str(path))
     store.upsert("project", {"id": pid, "name": p.name, "path": p.path, "created_at": p.created_at})
     assets, cache_hits = [], 0
     for source in iter_media_files(path, config):
@@ -64,7 +64,8 @@ def transcribe_words(project: str | Path, config: AppConfig) -> dict[str, int]:
             for segment in segments:
                 for word in segment.words or []:
                     n += 1
-                    words.append({"id": f"{asset['id']}_word_{n:06d}", "media_asset_id": asset["id"], "start_seconds": float(word.start), "end_seconds": float(word.end), "text": word.word.strip(), "confidence": float(getattr(word, "probability", 0) or 0)})
+                    probability = float(getattr(word, "probability", 0) or 0)
+                    words.append({"id": f"{asset['id']}_word_{n:06d}", "media_asset_id": asset["id"], "start_seconds": float(word.start), "end_seconds": float(word.end), "text": word.word.strip(), "probability": probability, "confidence": probability})
         elif engine not in {"none", "metadata-only", "metadata_only"}:
             raise ValueError(f"V2 word transcription does not support engine {engine!r}")
         for word in words:
@@ -109,12 +110,47 @@ def build_editorial_units(project: str | Path) -> list[dict[str, Any]]:
     return units
 
 
-def _continuity(decisions: list[V2EditDecision]) -> list[str]:
-    issues = []
-    if not decisions: issues.append("ERROR: timeline has no kept material")
-    for d in decisions:
-        if d.action in {"keep", "trim", "reorder", "alternate"} and d.out_seconds <= d.in_seconds: issues.append(f"ERROR: non-positive duration {d.id}")
-        if not d.reason: issues.append(f"ERROR: unexplained decision {d.id}")
+def _continuity(decisions: list[V2EditDecision], assets: dict[str, dict[str, Any]], units: dict[str, dict[str, Any]]) -> list[str]:
+    issues: list[str] = []
+    active = [d for d in decisions if d.action in {"keep", "trim", "reorder", "alternate"}]
+    if not active:
+        issues.append("ERROR: timeline has no kept material")
+    seen_ranges: set[tuple[str, float, float]] = set()
+    expected_offset = 0.0
+    last_source_start: dict[str, float] = {}
+    reorder_count = 0
+    for d in active:
+        asset = assets.get(d.media_asset_id)
+        if not asset:
+            issues.append(f"ERROR: missing media asset {d.media_asset_id} for {d.id}")
+            continue
+        if not Path(asset["source_path"]).exists():
+            issues.append(f"ERROR: missing media file {asset['source_path']}")
+        if d.in_seconds < 0 or d.out_seconds <= d.in_seconds:
+            issues.append(f"ERROR: invalid duration {d.id}")
+        if d.out_seconds > float(asset.get("duration_seconds") or 0) + 0.001:
+            issues.append(f"ERROR: source range exceeds media duration {d.id}")
+        if abs(d.timeline_position_seconds - expected_offset) > 0.002:
+            issues.append(f"ERROR: invalid timeline offset {d.id}")
+        expected_offset += max(0.0, d.out_seconds - d.in_seconds)
+        key = (d.media_asset_id, round(d.in_seconds, 3), round(d.out_seconds, 3))
+        if key in seen_ranges:
+            issues.append(f"ERROR: duplicate source range {d.id}")
+        seen_ranges.add(key)
+        previous = last_source_start.get(d.media_asset_id)
+        if previous is not None and d.in_seconds < previous:
+            reorder_count += 1
+        last_source_start[d.media_asset_id] = d.in_seconds
+        unit = units.get(d.editorial_unit_id, {})
+        text = str(unit.get("text", "")).strip().lower()
+        if text.startswith(("that ", "this ", "it ", "as i said", "earlier ")):
+            issues.append(f"WARNING: unresolved-reference risk in {d.id}: {text[:80]}")
+        if text.endswith("?") and d is active[-1]:
+            issues.append(f"WARNING: question may lack an answer after {d.id}")
+        if not d.reason:
+            issues.append(f"ERROR: unexplained decision {d.id}")
+    if reorder_count > 6:
+        issues.append(f"WARNING: excessive reordering ({reorder_count} backwards source jumps)")
     return issues
 
 
@@ -135,15 +171,17 @@ def plan_project(project: str | Path, edit_format: str = "youtube_longform", tar
             asset = assets[unit["media_asset_id"]]
             reason = ("Preserves complete sentence/visual unit for review" if keep else "Duplicate/retake alternate or beyond target; preserved in database")
             topic_value = sem[unit["id"]].topic if unit["id"] in sem else "general"
-            d = V2EditDecision(id=f"{mode}_{i:05d}", editorial_unit_id=unit["id"], action=action, reason=reason, source_path=asset["source_path"], media_asset_id=unit["media_asset_id"], in_seconds=unit["start_seconds"], out_seconds=unit["end_seconds"], timeline_position_seconds=position, alternate_unit_ids=next((r["alternate_unit_ids"] for r in retakes if r["preferred_unit_id"] == unit["id"]), []), notes=f"topic={topic_value}; style={style}")
+            duration = unit["end_seconds"] - unit["start_seconds"]
+            d = V2EditDecision(id=f"{mode}_{i:05d}", editorial_unit_id=unit["id"], action=action, reason=reason, rationale=reason, source_path=asset["source_path"], media_asset_id=unit["media_asset_id"], in_seconds=unit["start_seconds"], out_seconds=unit["end_seconds"], timeline_position_seconds=position, timeline_out=position + (duration if keep else 0.0), confidence=float(unit.get("confidence", 0.5)), preserved_context="Complete sentence or scene boundary", tags=[mode, topic_value], alternate_unit_ids=next((r["alternate_unit_ids"] for r in retakes if r["preferred_unit_id"] == unit["id"]), []), notes=f"topic={topic_value}; style={style}")
             decisions.append(d)
-            if keep: position += d.out_seconds - d.in_seconds
-        timeline = TimelineVersion(id=f"{pid}_{mode}", project_id=pid, mode=mode, format=edit_format, target_duration_seconds=target_duration, decisions=decisions)
+            if keep: position += duration
+        timeline = TimelineVersion(id=f"{pid}_{mode}", project_id=pid, version_name=f"{mode}_v2", mode=mode, format=edit_format, target_duration_seconds=target_duration, total_duration=position, brief=f"{edit_format} assistant-editor rough cut using style {style}", model_metadata={"provider": semantic.notes[0] if semantic.notes else "unknown"}, decisions=decisions)
         store.upsert("timeline_version", {"id": timeline.id, "project_id": pid, "mode": mode, "status": timeline.status, "payload": timeline.model_dump()})
         for d in decisions: store.upsert("edit_decision", {"id": d.id, "project_id": pid, "timeline_id": timeline.id, "payload": d.model_dump()})
         write_json_safe(path / "05_EDIT_DECISIONS" / f"timeline_{mode}.json", timeline.model_dump())
         outputs[mode] = timeline
-    issues = _continuity(outputs["conservative"].decisions) + _continuity(outputs["aggressive"].decisions)
+    unit_map = {u["id"]: u for u in units}
+    issues = _continuity(outputs["conservative"].decisions, assets, unit_map) + _continuity(outputs["aggressive"].decisions, assets, unit_map)
     write_text_safe(path / "04_ANALYSIS" / "continuity_report.md", "# Continuity report\n\n" + ("No deterministic continuity errors found.\n" if not issues else "\n".join(f"- {x}" for x in issues) + "\n"))
     lines = ["# Paper edit", "", "These are assistant-editor rough cuts, not final professional edits.", "", "## Topic map"] + [f"- {t}" for t in semantic.topic_order]
     for mode, timeline in outputs.items():
@@ -154,14 +192,25 @@ def plan_project(project: str | Path, edit_format: str = "youtube_longform", tar
 
 
 def create_shorts(project: str | Path) -> Path:
-    path, store = Path(project).expanduser().resolve(), ProjectStore(project); pid = _project_id(path)
+    path, store = Path(project).expanduser().resolve(), ProjectStore(project)
+    pid = _project_id(path)
     timelines = store.rows("timeline_version", "project_id=? AND mode='aggressive'", (pid,))
-    if not timelines: raise FileNotFoundError("Plan timelines before generating shorts")
-    kept = [d for d in timelines[0]["payload"]["decisions"] if d["action"] == "keep"][:3]
+    if not timelines:
+        raise FileNotFoundError("Plan timelines before generating shorts")
+    kept = [d for d in timelines[-1]["payload"]["decisions"] if d["action"] == "keep"][:3]
     candidates = []
     for orientation in ("vertical", "horizontal"):
+        short_decisions: list[V2EditDecision] = []
+        position = 0.0
         for i, d in enumerate(kept, 1):
-            candidates.append({"id": f"short_{orientation}_{i:03d}", "orientation": orientation, "title": f"Candidate {i}", "hook": d["reason"], "caption": d["notes"], "description": "Self-contained assistant-selected complete editorial unit.", "media_asset_id": d["media_asset_id"], "start_seconds": d["in_seconds"], "end_seconds": d["out_seconds"], "confidence": 0.55, "context_warning": "Review surrounding context before publishing.", "reframe_notes": "Vertical center crop is only a suggestion; verify face/subject framing."})
+            duration = float(d["out_seconds"]) - float(d["in_seconds"])
+            candidates.append({"id": f"short_{orientation}_{i:03d}", "orientation": orientation, "title": f"Candidate {i}", "hook": d["reason"], "caption": d["notes"], "description": "Self-contained assistant-selected complete editorial unit.", "media_asset_id": d["media_asset_id"], "start_seconds": d["in_seconds"], "end_seconds": d["out_seconds"], "confidence": d.get("confidence", 0.55), "context_warning": "Review surrounding context before publishing.", "reframe_notes": "Use center crop only when safe; otherwise use a blur-background layout and verify framing."})
+            short_decisions.append(V2EditDecision.model_validate({**d, "id": f"short_{orientation}_{i:03d}", "action": "short_candidate", "timeline_position_seconds": position, "timeline_out": position + duration, "tags": [orientation, "short_candidate"]}))
+            position += duration
+        mode = "short_vertical" if orientation == "vertical" else "short_horizontal"
+        timeline = TimelineVersion(id=f"{pid}_{mode}", project_id=pid, version_name=f"{mode}_v2", mode=mode, format=mode, total_duration=position, brief="Short-form candidates require human context and framing review", decisions=short_decisions)
+        store.upsert("timeline_version", {"id": timeline.id, "project_id": pid, "mode": mode, "status": "draft", "payload": timeline.model_dump()})
+        write_json_safe(path / "05_EDIT_DECISIONS" / f"timeline_{mode}.json", timeline.model_dump())
     return write_json_safe(path / "04_ANALYSIS" / "short_candidates.json", {"candidates": candidates})
 
 

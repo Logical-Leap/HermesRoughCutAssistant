@@ -76,17 +76,30 @@ class OpenAICompatibleEditorialModel(EditorialModel):
                 error = exc
                 if attempt < budget.max_retries: time.sleep(2 ** attempt)
         raise RuntimeError(f"Editorial model failed after retries: {error}")
-
 def model_from_env() -> EditorialModel:
-    endpoint = os.getenv("HERMES_EDITORIAL_ENDPOINT", "")
+    endpoint = os.getenv("EDITORIAL_MODEL_BASE_URL", "") or os.getenv("HERMES_EDITORIAL_ENDPOINT", "")
     if endpoint:
-        return OpenAICompatibleEditorialModel(endpoint, os.getenv("HERMES_EDITORIAL_MODEL", "gpt-4o-mini"), os.getenv("HERMES_EDITORIAL_API_KEY", ""))
+        return OpenAICompatibleEditorialModel(endpoint, os.getenv("EDITORIAL_MODEL_NAME", "") or os.getenv("HERMES_EDITORIAL_MODEL", "gpt-4o-mini"), os.getenv("EDITORIAL_MODEL_API_KEY", "") or os.getenv("HERMES_EDITORIAL_API_KEY", ""))
     return DeterministicEditorialModel()
+
 
 def cached_analyze(store: ProjectStore, model: EditorialModel, units: list[dict[str, Any]], budget: ModelBudget) -> SemanticResult:
     key = hashlib.sha256((model.__class__.__name__ + json.dumps(units, sort_keys=True)).encode()).hexdigest()
     cached = store.rows("model_cache", "cache_key=?", (key,))
-    if cached: return SemanticResult.model_validate(cached[0]["payload"])
+    if cached:
+        payload = cached[0]["payload"]
+        return SemanticResult.model_validate(payload.get("response", payload))
+    before = (budget.calls, budget.tokens, budget.cost_usd)
     result = model.analyze(units, budget)
-    store.upsert("model_cache", {"cache_key": key, "payload": result.model_dump(), "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ")})
+    metadata = {
+        "provider": model.__class__.__name__,
+        "model": getattr(model, "model", "deterministic"),
+        "prompt_version": "v2-semantic-1",
+        "input_hash": key,
+        "token_counts": {"estimated_input": budget.tokens - before[1]},
+        "estimated_cost_usd": budget.cost_usd - before[2],
+        "response": result.model_dump(),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    store.upsert("model_cache", {"cache_key": key, "payload": metadata, "created_at": metadata["timestamp"]})
     return result

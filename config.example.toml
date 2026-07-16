@@ -1,46 +1,50 @@
 [projects]
-root = "~/VideoProjects"
+root = "/Users/chandler/VideoProjects"
 
 [transcription]
 engine = "faster-whisper"
-model = "base"
+model = "large-v3"
 language = "en"
 word_timestamps = true
 
 [analysis]
-scene_threshold = 0.35
-silence_db = -38
-min_silence_seconds = 0.35
+scene_detection = true
+visual_quality_metrics = true
+speaker_diarization = false
+face_detection = false
+retake_detection = true
 
 [editorial]
-provider = "deterministic"
-endpoint_env = "HERMES_EDITORIAL_ENDPOINT"
-model_env = "HERMES_EDITORIAL_MODEL"
-api_key_env = "HERMES_EDITORIAL_API_KEY"
-max_calls = 4
-max_tokens = 12000
-max_cost_usd = 1.0
-max_retries = 2
+provider = "openai_compatible"
+model = ""
+base_url = ""
+api_key_env = "EDITORIAL_MODEL_API_KEY"
+maximum_project_tokens = 150000
+maximum_total_model_calls = 24
+maximum_project_cost_usd = 5.00
+maximum_retries = 2
+default_style = "chandler_default"
 
 [editing]
 default_format = "youtube_longform"
-default_mode = "conservative"
-target_duration_seconds = 0
-never_cut_mid_word = true
+minimum_pause_seconds = 0.18
+maximum_automatic_reorder_distance = 6
+preserve_chronology_by_default = true
+generate_conservative_cut = true
+generate_aggressive_cut = true
 
 [fcpxml]
-version = "1.10"
-default_fps = "30000/1001"
-width = 1920
-height = 1080
+default_horizontal_width = 1920
+default_horizontal_height = 1080
+default_vertical_width = 1080
+default_vertical_height = 1920
+add_markers = true
+add_roles = true
 
 [review]
 host = "127.0.0.1"
 port = 8765
 
 [rendering]
-enabled = false
-horizontal_width = 1920
-horizontal_height = 1080
-vertical_width = 1080
-vertical_height = 1920
+enabled_by_default = false
+preview_resolution = "1280x720"

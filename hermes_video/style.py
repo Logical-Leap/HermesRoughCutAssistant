@@ -24,5 +24,25 @@ def learn_edit(project: str | Path, automated: str | Path, final: str | Path, na
     project_path = Path(project).expanduser().resolve(); stats = compare_timelines(automated, final)
     profile = {"name": name, "version": 1, "source_comparisons": [{"automated": str(automated), "human_final": str(final)}], "descriptive_stats": stats, "rules": {"prefer_complete_sentences": True, "target_average_clip_seconds": stats["average_human_clip_seconds"]}, "method": "retrieval and prompt conditioning; no fine-tuning"}
     return write_json_safe(project_path / ".hermes" / "style_profiles" / f"{name}.json", profile)
-def list_styles(project: str | Path) -> list[str]: return [p.stem for p in sorted((Path(project) / ".hermes" / "style_profiles").glob("*.json"))]
-def show_style(project: str | Path, name: str) -> dict: return json.loads((Path(project) / ".hermes" / "style_profiles" / f"{name}.json").read_text())
+def list_styles(project: str | Path) -> list[str]:
+    return [p.stem for p in sorted((Path(project) / ".hermes" / "style_profiles").glob("*.json"))]
+
+
+def show_style(project: str | Path, name: str) -> dict:
+    return json.loads((Path(project) / ".hermes" / "style_profiles" / f"{name}.json").read_text())
+
+
+def rebuild_style(project: str | Path, name: str = "chandler_default") -> Path:
+    profile = show_style(project, name)
+    comparisons = profile.get("source_comparisons", [])
+    if not comparisons:
+        raise ValueError(f"Style profile {name!r} has no source comparisons")
+    stats = [compare_timelines(item["automated"], item["human_final"]) for item in comparisons]
+    profile["descriptive_stats"] = {
+        "comparison_count": len(stats),
+        "mean_exact_select_retention": statistics.mean(x["exact_select_retention"] for x in stats),
+        "mean_human_clip_seconds": statistics.mean(x["average_human_clip_seconds"] for x in stats),
+        "mean_human_total_seconds": statistics.mean(x["human_total_seconds"] for x in stats),
+    }
+    profile["rules"]["target_average_clip_seconds"] = profile["descriptive_stats"]["mean_human_clip_seconds"]
+    return write_json_safe(Path(project) / ".hermes" / "style_profiles" / f"{name}.json", profile)
