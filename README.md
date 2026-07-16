@@ -1,237 +1,140 @@
-# Hermes Rough Cut Assistant
+# Hermes Rough Cut Assistant V2
 
-Hermes Rough Cut Assistant is a local macOS video-project folder workflow. You create one folder that contains all your video projects, make a new folder for each edit, drop clips and music directly into that project folder, and run one command. Hermes builds a rough edit, renders horizontal and vertical MP4 exports, and creates an editable Final Cut Pro XML handoff so you can change the edit in Final Cut Pro.
+Hermes is a **local-first assistant editor** for Final Cut Pro. It inventories footage, performs deterministic media analysis, transcribes speech with word timestamps, builds sentence-safe editorial units, proposes conservative and aggressive paper edits, provides a local approval interface, and exports editable FCPXML.
 
-The system is intentionally file-based. It does not click around Final Cut Pro. It renders preview/final MP4s with ffmpeg and creates FCPXML for the editable Final Cut Pro timeline.
+It does **not** create a finished professional edit or replace editorial judgment. Final creative decisions, sound design, color, graphics, captions, masking, reframing, and polish remain in Final Cut Pro.
 
-## The simple workflow
+## What it can do
 
-```text
-VideoProjects/
-  Client Interview/
-    clip_001.mov
-    clip_002.mov
-    broll.mp4
-    background_music.wav
-    02_AUDIO_EXTRACTS/
-    03_TRANSCRIPTS/
-    04_ANALYSIS/
-    05_EDIT_DECISIONS/
-    06_FCPXML/
-    07_APPLESCRIPT/
-    08_EXPORTS/
-```
+- Store indexed project state in `<project>/.hermes/project.db` while exporting readable JSON and Markdown.
+- Use FFprobe/FFmpeg for metadata, checksums, scene changes, silence, loudness, and clipping signals.
+- Transcribe locally with Faster Whisper word timestamps and build sentence/clause boundaries.
+- Group likely retakes while preserving every rejected take.
+- Use a deterministic semantic fallback or an environment-configured OpenAI-compatible endpoint.
+- Produce conservative, aggressive, horizontal-short, and vertical-short assistant-editor timelines.
+- Explain every keep/remove/alternate and generate deterministic continuity warnings.
+- Review source passages, transcripts, decisions, alternatives, ordering, and B-roll notes locally.
+- Export rational-time horizontal and vertical FCPXML timelines with markers, roles, and placeholders.
+- Compare automated and completed FCPXML, build descriptive style profiles, and measure benchmarks honestly.
 
-You do not have to use `01_RAW` anymore. Just drop media into the project folder. The older `01_RAW/A_CAM/B_CAM/IPHONE/AUDIO` layout still works if you want it.
+## What it cannot do
 
-## What it now produces
-
-For each project, Hermes can produce:
-
-- `08_EXPORTS/Project_horizontal_1920x1080.mp4` — horizontal render
-- `08_EXPORTS/Project_vertical_1080x1920.mp4` — vertical render
-- `06_FCPXML/Project_rough_cut.fcpxml` — editable Final Cut Pro XML timeline
-- `07_APPLESCRIPT/import_to_final_cut.applescript` — opens that XML in Final Cut Pro
-- `project_manifest.json` — scanned media metadata
-- `03_TRANSCRIPTS/*.md` and `*.json` — transcripts
-- `04_ANALYSIS/transcript_analysis.md` — why clips were selected
-- `05_EDIT_DECISIONS/*.json` — the cut list used for rendering and FCPXML
-
-Important: Final Cut Pro does not expose a normal `.fcpbundle` project-file generator for tools like this. The correct editable handoff is FCPXML. Importing the FCPXML into Final Cut Pro creates the editable project/timeline inside your Final Cut library.
+Hermes does not click through Final Cut with computer vision, stream full videos frame-by-frame to an LLM, use fixed-percentage sampling as editorial intelligence, cut directly on raw Whisper segment boundaries, modify Final Cut libraries, or automatically declare an unreviewed timeline final. FFmpeg previews are optional; FCPXML is the primary handoff.
 
 ## Installation
 
+Requirements: macOS, Python 3.11+, FFmpeg/FFprobe, and Final Cut Pro only for manual import testing.
+
 ```bash
+brew install ffmpeg
 gh repo clone Logical-Leap/HermesRoughCutAssistant
 cd HermesRoughCutAssistant
-chmod +x scripts/install_dependencies.sh scripts/run_demo.sh
-scripts/install_dependencies.sh
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
 source .venv/bin/activate
+cp config.example.toml config.toml
+pytest -q
 ```
 
-The installer uses Homebrew for `ffmpeg`, creates `.venv`, and installs Python requirements.
+The default transcription engine is `faster-whisper` with `large-v3`. Choose a smaller model in `config.toml` when appropriate. No paid API is required.
 
-## Create your video projects folder
+## Standard workflow
 
 ```bash
-python run.py setup-root --projects-root "/Users/chandler/VideoProjects"
+python run.py init --project "/Users/chandler/VideoProjects/My Video"
+# Put source media in the project root or the legacy 01_RAW layout.
+python run.py ingest --project "/Users/chandler/VideoProjects/My Video"
+python run.py analyze --project "/Users/chandler/VideoProjects/My Video"
+python run.py plan --project "/Users/chandler/VideoProjects/My Video" --format youtube_longform --target-duration 900 --style chandler_default
+python run.py review --project "/Users/chandler/VideoProjects/My Video"
+python run.py export-fcpxml --project "/Users/chandler/VideoProjects/My Video" --timeline approved
+python run.py open-in-fcp --project "/Users/chandler/VideoProjects/My Video" --timeline approved
 ```
 
-Then create one folder per edit:
+Convenience preparation:
 
 ```bash
-mkdir -p "/Users/chandler/VideoProjects/Client Interview 01"
+python run.py prepare --project "/Users/chandler/VideoProjects/My Video" --format youtube_longform --style chandler_default
 ```
 
-Drop clips/music directly into that folder:
-
-```text
-/Users/chandler/VideoProjects/Client Interview 01/interview_a_cam.mov
-/Users/chandler/VideoProjects/Client Interview 01/interview_b_cam.mov
-/Users/chandler/VideoProjects/Client Interview 01/broll_warehouse.mp4
-/Users/chandler/VideoProjects/Client Interview 01/background_music.wav
-```
-
-Music detection is filename/folder-name based. Name background tracks something like `music.wav`, `background_music.mp3`, `soundtrack.m4a`, or put them in a `Music/` folder.
-
-## One command to edit and render
-
-```bash
-python run.py edit --project "/Users/chandler/VideoProjects/Client Interview 01" --format youtube_longform
-```
-
-That command runs the whole pipeline:
-
-1. Creates generated-output folders.
-2. Scans all clips/music in the project folder.
-3. Extracts audio from video clips.
-4. Transcribes speech.
-5. Analyzes transcript moments.
-6. Builds an edit decision list.
-7. Generates FCPXML for Final Cut Pro.
-8. Generates AppleScript to open the FCPXML.
-9. Renders horizontal MP4.
-10. Renders vertical MP4.
-11. Mixes detected music quietly under the render when a music file exists.
-
-The old command still works too:
-
-```bash
-python run.py full --project "/Users/chandler/VideoProjects/Client Interview 01" --format youtube_longform
-```
-
-`full` is now an alias for `edit`.
-
-## Open the editable cut in Final Cut Pro
-
-```bash
-python run.py open-in-fcp --project "/Users/chandler/VideoProjects/Client Interview 01"
-```
-
-Or manually import:
-
-1. Open Final Cut Pro.
-2. File -> Import -> XML.
-3. Select `06_FCPXML/Client Interview 01_rough_cut.fcpxml`.
-4. Final Cut Pro creates an editable project/timeline.
-5. Trim, rearrange, relink, color, mix, title, and finish inside Final Cut Pro.
-
-## Render only
-
-If you already have an edit decision list and only want exports:
-
-```bash
-python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01"
-```
-
-Horizontal only:
-
-```bash
-python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01" --horizontal-only
-```
-
-Vertical only:
-
-```bash
-python run.py render --project "/Users/chandler/VideoProjects/Client Interview 01" --vertical-only
-```
-
-## Watch mode / automatic processing
-
-Install the background watcher so dropping files into project folders automatically kicks off processing:
-
-```bash
-scripts/install_watcher_launch_agent.sh "/Users/chandler/VideoProjects"
-```
-
-On this Mac, if you use the default home folder, that path is usually:
-
-```bash
-scripts/install_watcher_launch_agent.sh "$HOME/VideoProjects"
-```
-
-The watcher runs as a macOS LaunchAgent and logs to:
-
-```text
-logs/watch.out.log
-logs/watch.err.log
-```
-
-If you already dropped media before the watcher was running, process all existing project folders once:
-
-```bash
-python run.py process-all --projects-root "/Users/chandler/VideoProjects" --format youtube_longform
-```
-
-Manual foreground watch still works:
-
-```bash
-python run.py watch --projects-root "/Users/chandler/VideoProjects"
-```
-
-Now each top-level folder is treated as a project. When new video/audio files are added to a project folder, it processes that project after the folder is quiet.
-
-## Edit formats
-
-Supported formats:
-
-- `youtube_longform`
-- `youtube_short`
-- `podcast`
-- `client_testimonial`
-- `vlog`
-- `generic_rough_cut`
-
-Example:
-
-```bash
-python run.py edit --project "/Users/chandler/VideoProjects/Testimonial" --format client_testimonial
-```
+`prepare` ingests, transcribes, performs technical and semantic analysis, generates conservative/aggressive plans, and creates short candidates. It returns `final: false`; review is mandatory.
 
 ## Demo
 
+The demo uses synthetic FFmpeg media and metadata-only transcription, so it does not download a Whisper model:
+
 ```bash
-source .venv/bin/activate
 scripts/run_demo.sh
 ```
 
-The demo creates a sample clip and music file directly in `sample_project/`, runs the full edit command, renders horizontal and vertical MP4s, and writes FCPXML.
+It demonstrates the real V2 pipeline and creates conservative/aggressive FCPXML rather than rendering a fake final edit.
 
-## Required macOS permissions
+## Review workflow
 
-- Terminal or your shell needs file access to the video project folders.
-- Final Cut Pro must be installed for `open-in-fcp`.
-- macOS may ask for Automation permission when `osascript` tells Final Cut Pro to open the generated FCPXML. Approve it in System Settings -> Privacy & Security -> Automation.
+`review` prints a local URL, normally `http://127.0.0.1:8765`. The interface shows conservative/aggressive timelines and transcripts, plays source media, records approvals/rejections/restores/alternate choices, supports ordering and B-roll notes, and creates an approved timeline. It is a paper-edit interface, not a nonlinear editor.
 
-## What it does not do
+## Final Cut workflow
 
-- It does not delete raw footage.
-- It does not modify existing Final Cut libraries directly.
-- It does not click around the Final Cut Pro UI.
-- It does not guarantee a polished human-quality final edit. It produces an automated rough edit plus render outputs.
-- It does not generate a native `.fcpbundle`; it generates FCPXML, which is the safe editable interchange format Final Cut Pro imports.
+```bash
+python run.py export-fcpxml --project "/path" --timeline conservative --orientation horizontal
+python run.py export-fcpxml --project "/path" --timeline aggressive --orientation vertical
+python run.py export-fcpxml --project "/path" --timeline approved
+```
+
+The exporter parses XML and checks resource references, positive durations, and local source existence. Existing XML is backed up. Import manually with **File → Import → XML**, or use `open-in-fcp`, which only opens the generated XML. XML validation does not claim a particular Final Cut release imported it; manual import remains an integration gate.
+
+## Local and cloud model options
+
+Without an endpoint, Hermes uses its deterministic fallback and labels the limitation. For a local or cloud OpenAI-compatible endpoint:
+
+```bash
+export EDITORIAL_MODEL_BASE_URL="http://127.0.0.1:1234/v1"
+export EDITORIAL_MODEL_NAME="your-model"
+export EDITORIAL_MODEL_API_KEY="..."   # only if required
+```
+
+Never commit API keys. Model responses are cached by input hash with provider, model, prompt version, token estimate, cost estimate, response, and timestamp. Configure token, call, retry, and cost limits in TOML. Budget exhaustion stops safely.
+
+## Style learning
+
+```bash
+python run.py learn-edit --project "/path" --automated-xml automated.fcpxml --final-xml final.fcpxml
+python run.py style list --project "/path"
+python run.py style show chandler_default --project "/path"
+python run.py style rebuild chandler_default --project "/path"
+```
+
+V2 uses descriptive statistics, explicit rules, prior-example retrieval, and prompt conditioning—not model fine-tuning.
+
+## Benchmark workflow
+
+```bash
+python run.py benchmark init --project "/path"
+python run.py benchmark record-baseline --project "/path" --minutes 120 --structure-units 20
+python run.py benchmark evaluate --project "/path" --minutes 60 --retained-units 15 --final-xml final.fcpxml
+```
+
+Reports fail honestly when active editing-time reduction is below 40%, unflagged cut errors exist, or rough-cut structure retention is below 70%.
+
+## Backward compatibility
+
+- `edit` and `full` are deprecated aliases for `prepare`; they no longer invoke montage rendering.
+- `marketing-edit` is deprecated. The old renderer is available only as `legacy-marketing-montage`.
+- `scan`, `transcribe`, `build-edit`, and `build-fcpxml` remain compatibility adapters with notices.
+- `render` is optional preview functionality and requires a named V2 timeline.
+
+## Privacy and safety
+
+Media and deterministic analysis stay local. Only structured editorial context is sent when an external endpoint is explicitly configured. Raw media is never deleted. Rejected material remains in project state. Generated artifacts are backed up before replacement. Hermes never edits a Final Cut library.
 
 ## Troubleshooting
 
-- `ffprobe not found` or `ffmpeg not found`: run `brew install ffmpeg`.
-- `faster-whisper is not installed`: run `scripts/install_dependencies.sh`.
-- Empty transcripts in demo: expected when using `--engine none`; real projects use faster-whisper by default.
-- Render fails on a strange codec: transcode source clips to ProRes or H.264 and rerun.
-- FCPXML imports but media is offline: keep source media at the original paths or relink media in Final Cut Pro.
-- Final Cut Pro does not open: run manual XML import or approve Automation permission.
+- Missing `ffmpeg`/`ffprobe`: `brew install ffmpeg`.
+- Whisper import/model failure: reinstall requirements; `--engine none` is diagnostics-only.
+- Empty metadata-only transcript: expected; use Faster Whisper for spoken content.
+- Review dependencies missing: install `fastapi` and `uvicorn` from requirements.
+- FCPXML missing-media error: restore/relink media and re-ingest.
+- Unsupported frame rate: transcode or add verified rational support; Hermes refuses to guess.
+- Final Cut does not open: import XML manually and check macOS Automation permission.
 
-## The practical version
-
-For everyday use:
-
-```bash
-cd HermesRoughCutAssistant
-source .venv/bin/activate
-python run.py setup-root --projects-root "/Users/chandler/VideoProjects"
-mkdir -p "/Users/chandler/VideoProjects/My New Video"
-# Drop all clips and music into /Users/chandler/VideoProjects/My New Video
-python run.py edit --project "/Users/chandler/VideoProjects/My New Video" --format youtube_longform
-python run.py open-in-fcp --project "/Users/chandler/VideoProjects/My New Video"
-```
-
-Final renders are in `08_EXPORTS`. Editable Final Cut handoff is in `06_FCPXML`.
+See `docs/` for architecture, pipeline, handoff, style learning, benchmarks, audit, migration, and detailed troubleshooting.

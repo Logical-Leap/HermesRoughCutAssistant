@@ -1,26 +1,42 @@
-# V2 migration plan
+# V2 Migration Plan
 
-## Delivery order
+## Milestone 1 — correctness foundation
 
-1. **Correctness foundation** — introduce typed domain models, SQLite state/migrations, checksum metadata cache, word-level transcription abstraction, sentence/clause construction, JSON/Markdown exports, and make `prepare`/legacy `edit` route through the assistant pipeline.
-2. **Assistant intelligence** — deterministic FFprobe/FFmpeg analyzers, audio and scene regions, retake/duplicate grouping, complete editorial units, provider-neutral schema-validated semantic model with deterministic fallback and strict call/token/cost/retry budgets, topic map, conservative/aggressive plans, safe boundaries, continuity and paper-edit reports.
-3. **Review and FCP handoff** — persistent approvals and a local FastAPI UI; modular rational FCPXML for common source rates and horizontal/vertical timelines, roles/markers/placeholders/external audio, backup plus validation. FCP is never automated beyond opening XML.
-4. **Personalization** — compare machine and human-final FCPXML, store descriptive style profiles, condition planning prompts/rules; no fine-tuning.
-5. **Shorts and benchmarks** — create explainable horizontal/vertical candidates and benchmark records with honest threshold failures.
+- [x] Audit V1 and record commands, runtimes, routing, dead code, and documentation drift.
+- [x] Add pytest and regression coverage.
+- [x] Add `<project>/.hermes/project.db` with indexed entities and readable exports.
+- [x] Add checksum-aware ingest caching.
+- [x] Add word-timestamp transcription and sentence construction.
+- [x] Route `prepare`, deprecated `edit`/`full`, watcher, and `process-all` through V2.
+- [x] Quarantine montage behind `legacy-marketing-montage`.
 
-## Module boundaries
+## Milestone 2 — assistant-editor intelligence
 
-- `store.py`, `ingest.py`, `transcription.py`, `local_analysis.py`: deterministic local media analysis and durable facts.
-- `editorial_model.py`, `semantic.py`: provider-neutral semantic analysis only; cached and budgeted.
-- `planning.py`, `continuity.py`, `shorts.py`: editorial planning and evaluation.
-- `fcpxml_generator.py`, optional `video_renderer.py`: timeline construction/handoff.
-- `review.py`, `style.py`, `benchmark.py`: personalization and human evaluation.
-- `pipeline.py`, `cli.py`: orchestration and explicit commands; no hidden montage selection.
+- [x] Deterministic scene, audio, silence, loudness, and clipping analysis.
+- [x] Retake grouping with preserved alternates.
+- [x] Complete editorial units.
+- [x] Provider-neutral deterministic/OpenAI-compatible model abstraction with caching and budgets.
+- [x] Conservative/aggressive paper edits and short timelines.
+- [x] Boundary and continuity validation reports.
 
-## Compatibility
+## Milestone 3 — review and handoff
 
-`scan`, `transcribe`, `build-edit`, and `build-fcpxml` remain as deprecated aliases with warnings. Ambiguous `edit` and `full` become deprecated aliases for `prepare` and never render or montage. `marketing-edit` becomes a deprecated alias for explicit `legacy-marketing-montage`. Existing numbered output folders remain. SQLite is authoritative; portable JSON/Markdown exports remain reviewable.
+- [x] Local transcript/timeline/media review UI and persistent approval state.
+- [x] Approved timeline creation.
+- [x] Rational-time FCPXML resources, roles, markers, B-roll gaps, horizontal/vertical formats, backups, and validation.
+- [ ] Manual import validation in Final Cut Pro on a real spoken project (manual/environment gate).
 
-## Verification gates
+## Milestone 4 — personalization
 
-Each subsystem receives unit tests. End-to-end tests use synthetic FFmpeg fixtures, deterministic/mock editorial models, and no Final Cut dependency. FCPXML is XML/reference/duration validated locally; actual Final Cut import remains a separately reported manual validation. The final demo must ingest, analyze, plan, produce shorts, and export conservative/aggressive FCPXML without a paid API; optional MP4 render is separate.
+- [x] Automated-versus-final FCPXML comparison.
+- [x] Descriptive style profiles and rebuild command.
+- [x] Style-conditioned planning metadata.
+- [ ] Expand comparison beyond exact resource/start/duration matching after real completed-edit fixtures accumulate.
+
+## Milestone 5 — evaluation
+
+- [x] Benchmark initialization, baseline, evaluation, threshold failures, and report.
+- [x] Synthetic single-camera fixture in automated tests.
+- [ ] Collect measured podcast and vlog projects. The repository does not fabricate human-time savings.
+
+Migration is additive. Raw media is never deleted, V1 artifacts remain readable, and ambiguous legacy commands emit deprecation notices. No unreviewed timeline is labeled final.

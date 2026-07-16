@@ -1,48 +1,40 @@
-# V1 audit and baseline
+# V1 Audit
 
-Audit date: 2026-07-16. Baseline commit: `50fdee9`. Branch: `feature/personalized-assistant-editor-v2`.
+Baseline: `main` commit `50fdee9`. The complete README and all tracked Python modules were inspected before V2 changes.
 
-## Reproduction
+## Measured baseline
 
-- `scripts/run_demo.sh`: exit 0, 1.47 s wall / 5.51 s user / 1.13 s system on this Mac (Python 3.11.15, FFmpeg 8.1.2). It created one six-second synthetic clip and music bed.
-- `python3 -m pytest -q`: exit 5 in 0.17 s; **no tests collected**. No `tests/` directory existed.
-- No `.venv` existed. The demo happened to run against globally available dependencies.
+| Command | Result |
+|---|---|
+| `python run.py --help` | PASS, 0.26 s |
+| `.venv/bin/python -m pytest -q` | FAIL: pytest not installed; no tracked tests |
+| `scripts/run_demo.sh` | PASS, 2.31 s, but exercised marketing montage rather than the documented pipeline |
+| `init`, `scan`, `transcribe --engine none`, `analyze`, `build-edit`, `build-fcpxml`, `build-applescript`, `render` | Returned 0 on isolated synthetic media |
+| `marketing-edit`, `edit`, `full`, `process-all` | Returned 0, but all video paths used marketing sampling |
+| `watch` | Code path audited; bounded baseline unavailable because macOS lacks GNU `timeout` |
 
-The apparent demo success is misleading: `edit` detected video and immediately invoked the marketing editor. It skipped audio extraction, transcription, transcript analysis, and generic edit planning. Produced files were marketing MP4s and an FCPXML derived from the marketing EDL; the script printed nonexistent generic horizontal/vertical output paths.
+The demo printed standard horizontal/vertical filenames that did not exist. Actual outputs were `*_marketing_short_*`.
 
-## Exact command map
+## Exact command routing
 
-| User path | CLI dispatch | Implementation | Actual behavior |
-|---|---|---|---|
-| `edit`, `full` | `cli._run_edit` | `batch_processor.process_project` | Any video → `marketing_editor.render_marketing_edits`; image-only → photo montage; assistant path only for audio-only timed media. |
-| `marketing-edit` | direct | `marketing_editor.render_marketing_edits` | Hardcoded/sampled montage and MP4 render, then FCPXML. |
-| `render` | direct | `video_renderer.render_project` | With a manifest and any video, concatenates every source clip by orientation and ignores EDL. Explicit `--edl` uses decisions. |
-| `watch` | direct | `folder_watcher.watch_projects` | Watchdog or polling invokes `process_project`, therefore video becomes marketing montage. |
-| `process-all` | direct | `batch_processor.process_all_projects` | Iterates folders and invokes the same montage-default processor. |
-| `build-edit` | direct | `edit_decision_builder.build_edit_decisions` | Sorts highlights by score and enforces fixed min/max durations/counts. |
-| `build-fcpxml` | direct | `fcpxml_generator.build_fcpxml` | Chooses newest EDL with a marketing-biased sort, fixed 1080p30 timebase. |
+- `edit` and `full`: `cli.py → _run_edit → batch_processor.process_project`. Any video took the early branch in `batch_processor.py:27-30`, called `render_marketing_edits`, and returned before transcription, transcript analysis, normal decisions, or normal rendering.
+- `marketing-edit`: created fixed temporal samples and generated FCPXML from the vertical marketing EDL.
+- `render`: without `--edl`, `video_renderer.render_project` used whole-asset orientation concatenation instead of decisions.
+- `watch`: eventually called the same defective `process_project` path.
+- `process-all`: called `process_project` for each child and could exit successfully despite per-project failures.
 
-## Architecture and correctness findings
+## Defects
 
-- No SQLite project state, migrations, timeline versioning, approvals, style profiles, benchmarks, or semantic provider abstraction.
-- Models have media, raw Whisper `TranscriptSegment`, highlights, and an unconstrained edit decision. Required word/sentence/scene/audio/retake/editorial-unit types are absent.
-- Faster Whisper requests word timestamps but discards words and stores raw Whisper segments as editing units.
-- Media checksums are recalculated on every scan; metadata and transcripts are not cached by checksum.
-- Generic analysis uses transcript-segment scores and fixed first-30-second fallback selections.
-- Generic planning is score-only ordering with forced minimum clip extensions, which can create mid-sentence/mid-word cuts and padded content.
-- `marketing_editor._known_roadtrip_vertical_plan` contains personal filenames and exact timestamps. Generic montage plans sample fixed percentages (15/25/35/45/55/72/82%).
-- Retakes are neither grouped nor preserved as alternates. Removed material is not represented or explained.
-- FFmpeg analysis is metadata-only; no VAD, silence, loudness, clipping, noise, or scene-change regions.
-- FCPXML hardcodes 30 fps (`100/3000s`), 1920×1080, approximate millisecond times, and marks every source as audio. It does not model roles, placeholders, vertical formats, external audio, source-specific formats, or reference validation beyond XML parsing.
-- `render_project` silently bypasses its EDL when a manifest exists. This is dead/misleading generic rendering behavior.
-- Watcher has unused direct imports for the old pipeline and photo montage.
-- No local review UI or persistent human decisions.
-- No provider budgets, schema validation of semantic output, topic map, shorts candidate metadata, style learning, or benchmark gates.
+V1 mixed ingest, analysis, selection, rendering, and handoff. Generic code contained an `IMG_3274.MOV`–`IMG_3285.MOV` road-trip plan and fixed selections at percentages including 10%, 15%, 25%, 35%, 45%, 55%, 72%, and 82%. Transcript scoring used substring phrase counts, lexical diversity mislabeled as information density, first-30% hook bias, and score sorting that destroyed chronology. Minimum-duration enforcement extended clips beyond analyzed transcript boundaries. Repeated-phrase logic mixed independent source timelines.
+
+FCPXML was fixed to 1080p30 Rec.709, could understate resource duration, assumed media capabilities, prioritized marketing vertical EDL names, and validated only XML syntax. Default rendering concatenated full clips, accepted contradictory orientation flags, and did not safely escape apostrophes in concat manifests.
+
+Caching was path/mtime-oriented: replaced media could reuse stale audio and transcripts. Watchdog handled creation but not reliable modified/moved events and could process partially copied media. Artifacts were unversioned, provenance was absent, writes were non-atomic, and backup names could collide within one second.
 
 ## README drift
 
-README says `edit` runs scan → audio → transcription → analysis → EDL → FCPXML → render. For video it actually runs scan → marketing montage/render → marketing EDL → FCPXML. It calls `full` a correct alias but both silently montage. Demo output names printed at the end do not match generated marketing filenames. README examples contain `/Users/chandler/...`, contrary to portable configuration. It implies generated XML import creates a project but no import was tested. It calls MP4s final in places despite rough-cut limitations.
+The README claimed video transcription, semantic selection, EDL rendering, standard horizontal/vertical outputs, music mixing, and an editable equivalent of the render. The active video path did not perform those stages; output names differed; default render ignored decisions; and marketing FCPXML represented only one simplified variant.
 
-## Quarantine decision
+## Useful behavior retained
 
-V2 keeps the old module only behind explicit `legacy-marketing-montage`. No primary, watcher, batch, prepare, render, or FCPXML selection path may call it implicitly. Raw media is never deleted and generated files are backed up before replacement.
+Safe project scaffolding, flat-folder plus legacy ingest, FFmpeg/FFprobe wrappers, source preservation, backups, AppleScript handoff, and opt-in montage access remain. The montage is quarantined behind `legacy-marketing-montage` and is not a V2 default.
