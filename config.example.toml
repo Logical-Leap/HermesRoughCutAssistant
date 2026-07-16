@@ -1,0 +1,50 @@
+[projects]
+root = "/Users/chandler/VideoProjects"
+
+[transcription]
+engine = "faster-whisper"
+model = "large-v3"
+language = "en"
+word_timestamps = true
+
+[analysis]
+scene_detection = true
+visual_quality_metrics = true
+speaker_diarization = false
+face_detection = false
+retake_detection = true
+
+[editorial]
+provider = "openai_compatible"
+model = ""
+base_url = ""
+api_key_env = "EDITORIAL_MODEL_API_KEY"
+maximum_project_tokens = 150000
+maximum_total_model_calls = 24
+maximum_project_cost_usd = 5.00
+maximum_retries = 2
+default_style = "chandler_default"
+
+[editing]
+default_format = "youtube_longform"
+minimum_pause_seconds = 0.18
+maximum_automatic_reorder_distance = 6
+preserve_chronology_by_default = true
+generate_conservative_cut = true
+generate_aggressive_cut = true
+
+[fcpxml]
+default_horizontal_width = 1920
+default_horizontal_height = 1080
+default_vertical_width = 1080
+default_vertical_height = 1920
+add_markers = true
+add_roles = true
+
+[review]
+host = "127.0.0.1"
+port = 8765
+
+[rendering]
+enabled_by_default = false
+preview_resolution = "1280x720"
