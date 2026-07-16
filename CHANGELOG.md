@@ -10,6 +10,7 @@
 - Added rational-time horizontal/vertical FCPXML export with source metadata, markers, roles, placeholders, backups, and validation.
 - Added completed-edit comparison, style profiles, benchmark reporting, V2 tests, updated demo, accurate README, and architecture/workflow documentation.
 - Quarantined the old montage renderer behind `legacy-marketing-montage`; deprecated ambiguous V1 commands.
+- Fixed final-review consistency: unselected alternates no longer enter FCPXML, review changes recompute/persist authoritative timelines, re-ingest invalidates stale media analysis, planning honors configured model budgets/style examples, preview rendering accepts V2 timelines, and `open-in-fcp --timeline` opens the requested export.
 
 ### Known limitations
 

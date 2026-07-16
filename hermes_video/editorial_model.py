@@ -76,11 +76,25 @@ class OpenAICompatibleEditorialModel(EditorialModel):
                 error = exc
                 if attempt < budget.max_retries: time.sleep(2 ** attempt)
         raise RuntimeError(f"Editorial model failed after retries: {error}")
-def model_from_env() -> EditorialModel:
+def model_from_config(config: Any | None = None) -> EditorialModel:
     endpoint = os.getenv("EDITORIAL_MODEL_BASE_URL", "") or os.getenv("HERMES_EDITORIAL_ENDPOINT", "")
-    if endpoint:
-        return OpenAICompatibleEditorialModel(endpoint, os.getenv("EDITORIAL_MODEL_NAME", "") or os.getenv("HERMES_EDITORIAL_MODEL", "gpt-4o-mini"), os.getenv("EDITORIAL_MODEL_API_KEY", "") or os.getenv("HERMES_EDITORIAL_API_KEY", ""))
+    model_name = os.getenv("EDITORIAL_MODEL_NAME", "") or os.getenv("HERMES_EDITORIAL_MODEL", "")
+    api_key = os.getenv("EDITORIAL_MODEL_API_KEY", "") or os.getenv("HERMES_EDITORIAL_API_KEY", "")
+    if config is not None:
+        endpoint = endpoint or getattr(config, "editorial_base_url", "")
+        model_name = model_name or getattr(config, "editorial_model", "")
+        key_env = getattr(config, "editorial_api_key_env", "EDITORIAL_MODEL_API_KEY")
+        api_key = api_key or os.getenv(key_env, "")
+        provider = getattr(config, "editorial_provider", "deterministic")
+    else:
+        provider = "openai_compatible" if endpoint else "deterministic"
+    if endpoint and provider in {"openai_compatible", "openai-compatible", "local"}:
+        return OpenAICompatibleEditorialModel(endpoint, model_name or "gpt-4o-mini", api_key)
     return DeterministicEditorialModel()
+
+
+def model_from_env() -> EditorialModel:
+    return model_from_config(None)
 
 
 def cached_analyze(store: ProjectStore, model: EditorialModel, units: list[dict[str, Any]], budget: ModelBudget) -> SemanticResult:

@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .config import write_json_safe
 from .models import TimelineVersion
 from .store import ProjectStore
 
@@ -18,6 +19,34 @@ class ReviewAction(BaseModel):
 
 class PreferredTimeline(BaseModel):
     mode: str
+
+
+ACTIVE_ACTIONS = {"keep", "trim", "reorder", "short_candidate", "broll_placeholder"}
+
+
+def normalize_timeline(payload: dict[str, Any]) -> dict[str, Any]:
+    position = 0.0
+    for decision in payload.get("decisions", []):
+        decision["timeline_position_seconds"] = position
+        duration = max(0.0, float(decision.get("out_seconds", 0)) - float(decision.get("in_seconds", 0)))
+        if decision.get("action") in ACTIVE_ACTIONS:
+            position += duration
+        decision["timeline_out"] = position
+    payload["total_duration"] = position
+    return payload
+
+
+def persist_timeline(store: ProjectStore, project_path: Path, row: dict[str, Any], payload: dict[str, Any], export_name: str | None = None) -> dict[str, Any]:
+    payload = normalize_timeline(payload)
+    validated = TimelineVersion.model_validate(payload)
+    store.upsert("timeline_version", {"id": validated.id, "project_id": validated.project_id, "mode": validated.mode, "status": validated.status, "payload": validated.model_dump()})
+    store.delete_where("edit_decision", "timeline_id=?", (validated.id,))
+    for decision in validated.decisions:
+        store.upsert("edit_decision", {"id": decision.id, "project_id": validated.project_id, "timeline_id": validated.id, "payload": decision.model_dump()})
+    name = export_name or ("approved" if validated.status == "approved" else validated.mode)
+    write_json_safe(project_path / "05_EDIT_DECISIONS" / f"timeline_{name}.json", validated.model_dump())
+    return validated.model_dump()
+
 
 HTML = """<!doctype html><meta charset='utf-8'><title>Hermes Review</title>
 <style>body{font:15px system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem}nav,article{border:1px solid #ddd;padding:1rem;margin:.6rem 0;border-radius:8px}.removed{opacity:.55}button,select{margin:.2rem;padding:.35rem}audio,video{max-width:100%;width:520px}.text{font-size:1.05rem;margin:.5rem 0}</style>
@@ -97,13 +126,39 @@ def create_app(project: str | Path):
         index = next((i for i, item in enumerate(decisions) if item["id"] == action.id), None)
         if index is None:
             raise HTTPException(404, "Unknown decision")
-        if action.action == "reject": decisions[index]["action"] = "remove"
-        elif action.action in {"restore", "approve"}: decisions[index]["action"] = "keep"; decisions[index]["approved"] = True
-        elif action.action == "alternate" and decisions[index].get("alternate_unit_ids"): decisions[index]["editorial_unit_id"] = decisions[index]["alternate_unit_ids"][0]
-        elif action.action == "broll": decisions[index]["notes"] = (decisions[index].get("notes", "") + "; B-roll required: " + action.notes).strip("; ")
-        elif action.action == "move_up" and index > 0: decisions[index - 1], decisions[index] = decisions[index], decisions[index - 1]
-        elif action.action == "move_down" and index < len(decisions) - 1: decisions[index + 1], decisions[index] = decisions[index], decisions[index + 1]
-        store.upsert("timeline_version", {"id": row["id"], "project_id": project_id, "mode": payload["mode"], "status": payload["status"], "payload": payload})
+        if action.action == "reject":
+            decisions[index]["action"] = "remove"
+            decisions[index]["approved"] = False
+        elif action.action in {"restore", "approve"}:
+            decisions[index]["action"] = "keep"
+            decisions[index]["approved"] = True
+        elif action.action == "alternate" and decisions[index].get("alternate_unit_ids"):
+            alternate_id = decisions[index]["alternate_unit_ids"][0]
+            unit_rows = store.rows("editorial_unit", "id=?", (alternate_id,))
+            if not unit_rows:
+                raise HTTPException(404, "Alternate editorial unit is missing")
+            unit = unit_rows[0]["payload"]
+            asset_rows = store.rows("media_asset", "id=?", (unit["media_asset_id"],))
+            if not asset_rows:
+                raise HTTPException(404, "Alternate media is missing")
+            decisions[index].update({
+                "editorial_unit_id": alternate_id,
+                "media_asset_id": unit["media_asset_id"],
+                "source_path": asset_rows[0]["payload"]["source_path"],
+                "in_seconds": unit["start_seconds"],
+                "out_seconds": unit["end_seconds"],
+                "action": "keep",
+                "reason": "Human selected alternate take during review",
+                "rationale": "Human selected alternate take during review",
+                "preserved_context": unit.get("preceding_context", ""),
+            })
+        elif action.action == "broll":
+            decisions[index]["notes"] = (decisions[index].get("notes", "") + "; B-roll required: " + action.notes).strip("; ")
+        elif action.action == "move_up" and index > 0:
+            decisions[index - 1], decisions[index] = decisions[index], decisions[index - 1]
+        elif action.action == "move_down" and index < len(decisions) - 1:
+            decisions[index + 1], decisions[index] = decisions[index], decisions[index + 1]
+        persist_timeline(store, path, row, payload)
         return {"saved": True}
 
     @app.post("/api/preferred")
@@ -111,9 +166,8 @@ def create_app(project: str | Path):
         row = timeline_row(request.mode)
         payload = dict(row["payload"])
         payload.update({"id": f"{row['project_id']}_approved", "mode": "human_final", "status": "approved", "version_name": "approved_v2"})
-        approved = TimelineVersion.model_validate(payload)
-        store.upsert("timeline_version", {"id": approved.id, "project_id": approved.project_id, "mode": approved.mode, "status": approved.status, "payload": approved.model_dump()})
-        return {"saved": True, "timeline": approved.id}
+        approved = persist_timeline(store, path, row, payload, export_name="approved")
+        return {"saved": True, "timeline": approved["id"]}
 
     return app
 

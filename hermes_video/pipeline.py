@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 from .config import AppConfig, write_json_safe, write_text_safe
-from .editorial_model import ModelBudget, cached_analyze, model_from_env
+from .editorial_model import ModelBudget, cached_analyze, model_from_config
 from .local_analysis import analyze_audio, analyze_scenes
 from .media_scanner import iter_media_files
 from .metadata_extractor import extract_asset
@@ -24,16 +24,34 @@ def ingest_project(project: str | Path, config: AppConfig) -> dict[str, Any]:
     store, pid = ProjectStore(path), _project_id(path)
     p = Project(id=pid, name=path.name, path=str(path), root_path=str(path))
     store.upsert("project", {"id": pid, "name": p.name, "path": p.path, "created_at": p.created_at})
+    previous_rows = store.rows("media_asset", "project_id=?", (pid,))
+    previous = {row["id"]: row["payload"] for row in previous_rows}
     assets, cache_hits = [], 0
     for source in iter_media_files(path, config):
         cached = store.cached_asset(source)
         if cached:
-            asset = cached; cache_hits += 1
+            asset = cached
+            cache_hits += 1
         else:
             asset = extract_asset(path, source, config).model_dump()
         stat = source.stat()
         store.upsert("media_asset", {"id": asset["id"], "project_id": pid, "checksum": asset["checksum"], "source_path": asset["source_path"], "payload": asset, "mtime_ns": stat.st_mtime_ns, "size": stat.st_size})
         assets.append(asset)
+
+    current = {asset["id"]: asset for asset in assets}
+    removed_ids = set(previous) - set(current)
+    changed_ids = {asset_id for asset_id in set(previous) & set(current) if previous[asset_id].get("checksum") != current[asset_id].get("checksum")}
+    added_ids = set(current) - set(previous)
+    for asset_id in removed_ids:
+        store.delete_where("media_asset", "id=?", (asset_id,))
+    for asset_id in removed_ids | changed_ids:
+        for table in ("transcript_word", "transcript_sentence", "scene", "audio_region"):
+            store.delete_where(table, "media_asset_id=?", (asset_id,))
+    if removed_ids or changed_ids or added_ids:
+        for table in ("retake_group", "editorial_unit", "edit_decision", "timeline_version", "approval"):
+            store.delete_where(table, "project_id=?", (pid,))
+        store.delete_where("model_cache", "1=1")
+
     manifest = {"project_name": path.name, "project_path": str(path), "asset_count": len(assets), "cache_hits": cache_hits, "assets": assets}
     write_json_safe(path / "project_manifest.json", manifest)
     write_json_safe(path / ".hermes" / "exports" / "project.json", p.model_dump())
@@ -154,12 +172,21 @@ def _continuity(decisions: list[V2EditDecision], assets: dict[str, dict[str, Any
     return issues
 
 
-def plan_project(project: str | Path, edit_format: str = "youtube_longform", target_duration: float | None = None, style: str = "chandler_default") -> dict[str, TimelineVersion]:
-    path, store = Path(project).expanduser().resolve(), ProjectStore(project); pid = _project_id(path)
-    units = build_editorial_units(path); assets = {r["id"]: r["payload"] for r in store.rows("media_asset", "project_id=?", (pid,))}
+def plan_project(project: str | Path, edit_format: str = "youtube_longform", target_duration: float | None = None, style: str = "chandler_default", config: AppConfig | None = None) -> dict[str, TimelineVersion]:
+    path, store = Path(project).expanduser().resolve(), ProjectStore(project)
+    pid = _project_id(path)
+    config = config or AppConfig()
+    units = build_editorial_units(path)
+    assets = {r["id"]: r["payload"] for r in store.rows("media_asset", "project_id=?", (pid,))}
     retakes = group_retakes(units)
     store.replace_project_rows("retake_group", pid, [{"id": r["id"], "project_id": pid, "payload": r} for r in retakes])
-    semantic = cached_analyze(store, model_from_env(), units, ModelBudget())
+    style_path = path / ".hermes" / "style_profiles" / f"{style}.json"
+    style_profile = json.loads(style_path.read_text()) if style_path.exists() else {"name": style, "rules": {}, "source_comparisons": []}
+    style_rules = style_profile.get("rules", {})
+    style_examples = style_profile.get("source_comparisons", [])
+    semantic_units = [{**unit, "style_rules": style_rules, "style_examples": style_examples[:3]} for unit in units]
+    budget = ModelBudget(max_calls=config.maximum_model_calls, max_tokens=config.maximum_project_tokens, max_cost_usd=config.maximum_project_cost_usd, max_retries=config.maximum_retries)
+    semantic = cached_analyze(store, model_from_config(config), semantic_units, budget)
     sem = {s.unit_id: s for s in semantic.units}; preferred = {r["preferred_unit_id"] for r in retakes}; alternates = {u for r in retakes for u in r["alternate_unit_ids"]}
     outputs = {}
     for mode in ("conservative", "aggressive"):
@@ -175,7 +202,7 @@ def plan_project(project: str | Path, edit_format: str = "youtube_longform", tar
             d = V2EditDecision(id=f"{mode}_{i:05d}", editorial_unit_id=unit["id"], action=action, reason=reason, rationale=reason, source_path=asset["source_path"], media_asset_id=unit["media_asset_id"], in_seconds=unit["start_seconds"], out_seconds=unit["end_seconds"], timeline_position_seconds=position, timeline_out=position + (duration if keep else 0.0), confidence=float(unit.get("confidence", 0.5)), preserved_context="Complete sentence or scene boundary", tags=[mode, topic_value], alternate_unit_ids=next((r["alternate_unit_ids"] for r in retakes if r["preferred_unit_id"] == unit["id"]), []), notes=f"topic={topic_value}; style={style}")
             decisions.append(d)
             if keep: position += duration
-        timeline = TimelineVersion(id=f"{pid}_{mode}", project_id=pid, version_name=f"{mode}_v2", mode=mode, format=edit_format, target_duration_seconds=target_duration, total_duration=position, brief=f"{edit_format} assistant-editor rough cut using style {style}", model_metadata={"provider": semantic.notes[0] if semantic.notes else "unknown"}, decisions=decisions)
+        timeline = TimelineVersion(id=f"{pid}_{mode}", project_id=pid, version_name=f"{mode}_v2", mode=mode, format=edit_format, target_duration_seconds=target_duration, total_duration=position, brief=f"{edit_format} assistant-editor rough cut using style {style}", model_metadata={"provider": semantic.notes[0] if semantic.notes else "unknown", "budget": {"calls": budget.calls, "tokens": budget.tokens, "estimated_cost_usd": budget.cost_usd}, "style_profile": style, "style_rules": style_rules, "style_examples": style_examples[:3]}, decisions=decisions)
         store.upsert("timeline_version", {"id": timeline.id, "project_id": pid, "mode": mode, "status": timeline.status, "payload": timeline.model_dump()})
         for d in decisions: store.upsert("edit_decision", {"id": d.id, "project_id": pid, "timeline_id": timeline.id, "payload": d.model_dump()})
         write_json_safe(path / "05_EDIT_DECISIONS" / f"timeline_{mode}.json", timeline.model_dump())
@@ -218,6 +245,6 @@ def prepare(project: str | Path, config: AppConfig, edit_format: str, target_dur
     manifest = ingest_project(project, config)
     transcription = transcribe_words(project, config)
     local = analyze_local(project)
-    timelines = plan_project(project, edit_format, target_duration, style)
+    timelines = plan_project(project, edit_format, target_duration, style, config=config)
     shorts = create_shorts(project)
     return {"status": "prepared_for_review", "final": False, "manifest": manifest, "transcription": transcription, "analysis": local, "timelines": list(timelines), "shorts": str(shorts)}

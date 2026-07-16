@@ -59,7 +59,7 @@ def export_timeline_fcpxml(project: str | Path, timeline_mode: str = "conservati
     if not rows: raise FileNotFoundError(f"No {timeline_mode} timeline. Run plan first.")
     timeline = TimelineVersion.model_validate(rows[-1]["payload"])
     assets = {r["id"]: r["payload"] for r in store.rows("media_asset")}
-    active = [d for d in timeline.decisions if d.action in {"keep", "trim", "reorder", "alternate", "broll_placeholder"}]
+    active = [d for d in timeline.decisions if d.action in {"keep", "trim", "reorder", "short_candidate", "broll_placeholder"}]
     if not active: raise ValueError("Timeline has no active decisions")
     root = ET.Element("fcpxml", {"version": "1.10"}); resources = ET.SubElement(root, "resources")
     width, height = ((1080, 1920) if orientation == "vertical" else (1920, 1080))

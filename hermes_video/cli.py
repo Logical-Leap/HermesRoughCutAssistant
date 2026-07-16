@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> None:
         _deprecated("transcribe", "analyze"); result = transcribe_words(args.project, config)
     elif cmd in {"plan", "build-edit"}:
         if cmd == "build-edit": _deprecated("build-edit", "plan")
-        result = {k: v.model_dump() for k, v in plan_project(args.project, args.format or config.default_edit_format, getattr(args, "target_duration", None), getattr(args, "style", config.default_style)).items()}
+        result = {k: v.model_dump() for k, v in plan_project(args.project, args.format or config.default_edit_format, getattr(args, "target_duration", None), getattr(args, "style", config.default_style), config=config).items()}
         create_shorts(args.project)
     elif cmd in {"prepare", "edit", "full"}:
         if cmd != "prepare": _deprecated(cmd, "prepare")
@@ -95,9 +95,9 @@ def main(argv: list[str] | None = None) -> None:
     elif cmd in {"export-fcpxml", "build-fcpxml"}:
         if cmd == "build-fcpxml": _deprecated("build-fcpxml", "export-fcpxml")
         result = str(export_timeline_fcpxml(args.project, args.timeline, getattr(args, "orientation", "horizontal")))
-        build_applescript(args.project, config)
+        build_applescript(args.project, config, args.timeline)
     elif cmd == "open-in-fcp":
-        open_in_fcp(args.project, config); return
+        open_in_fcp(args.project, config, args.timeline); return
     elif cmd == "render":
         if args.horizontal_only and args.vertical_only:
             parser.error("--horizontal-only and --vertical-only cannot be combined")

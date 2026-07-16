@@ -81,6 +81,12 @@ class ProjectStore:
             output.append(item)
         return output
 
+    def delete_where(self, table: str, where: str, params: tuple = ()) -> None:
+        if table not in TABLES:
+            raise ValueError(f"Unknown table: {table}")
+        with self.connect() as db:
+            db.execute(f"DELETE FROM {table} WHERE {where}", params)
+
     def cached_asset(self, source_path: Path) -> dict[str, Any] | None:
         stat = source_path.stat()
         rows = self.rows("media_asset", "source_path=? AND mtime_ns=? AND size=?", (str(source_path.resolve()), stat.st_mtime_ns, stat.st_size))

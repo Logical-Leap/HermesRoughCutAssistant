@@ -8,7 +8,7 @@ from pathlib import Path
 from .config import write_json_safe
 from .ffmpeg_tools import command
 from .logger import get_logger
-from .models import EditDecisionList
+from .models import EditDecisionList, TimelineVersion
 
 VIDEO_EXTS = {".mov", ".mp4", ".m4v", ".mkv", ".avi", ".mts", ".mxf"}
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"}
@@ -30,6 +30,16 @@ def _latest_edl(project_path: Path) -> Path:
     if not candidates:
         raise FileNotFoundError("No edit decision list found. Run build-edit first.")
     return candidates[0]
+
+
+def _load_video_decisions(path: Path):
+    data = json.loads(path.read_text())
+    if "mode" in data and "version_name" in data:
+        timeline = TimelineVersion.model_validate(data)
+        decisions = [decision for decision in timeline.decisions if decision.action in {"keep", "trim", "reorder", "short_candidate"}]
+    else:
+        decisions = EditDecisionList.model_validate(data).decisions
+    return [decision for decision in decisions if Path(decision.source_path).suffix.lower() in VIDEO_EXTS]
 
 
 def _safe_output(path: Path) -> Path:
@@ -191,8 +201,7 @@ def render_project(project: str | Path, edl_path: str | Path | None = None, *, r
         if videos:
             return render_comprehensive_orientation_edits(project_path, render_horizontal=render_horizontal, render_vertical=render_vertical)
     edl_file = Path(edl_path) if edl_path else _latest_edl(project_path)
-    edl = EditDecisionList.model_validate_json(edl_file.read_text())
-    video_decisions = [d for d in edl.decisions if Path(d.source_path).suffix.lower() in VIDEO_EXTS]
+    video_decisions = _load_video_decisions(edl_file)
     if not video_decisions:
         raise ValueError("No video edit decisions found; cannot render final videos.")
 
