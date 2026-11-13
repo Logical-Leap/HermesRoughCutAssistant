@@ -1,0 +1,61 @@
+{
+  "name": "Logical Leap Signal",
+  "version": "1.0.0",
+  "source": {
+    "liveWebsite": "https://logicalleap.tech",
+    "websiteRepository": "Logical-Leap/logicalleap-replica",
+    "notes": "Video-specific interpreted tokens derived from the November 2026 site CSS; rounded to hex. Not a verified standalone official brand guidelines document."
+  },
+  "colors": {
+    "primaryPurple": "#190731",
+    "darkCanvas": "#0E051A",
+    "limeHighlight": "#99CD32",
+    "textWhite": "#F5F5F5",
+    "darkCard": "#180E25",
+    "observedWebYellowNotForDefaultVideo": "#F9D51F"
+  },
+  "fonts": {
+    "defaultHeadlines": [
+      "Inter Tight ExtraBold",
+      "Inter Black"
+    ],
+    "defaultBody": "Inter",
+    "editorialDisplay": "Instrument Serif",
+    "wordmark": "Use approved original logo artwork"
+  },
+  "motion": {
+    "preferred": "hard cuts with purposeful sequential reveals",
+    "graphicEntryFramesAt24fps": [
+      4,
+      10
+    ],
+    "optionalEasedPushSeconds": [
+      0.4,
+      0.7
+    ],
+    "optionalEasedPushScalePercent": [
+      3,
+      6
+    ],
+    "disallowed": [
+      "per-cut pulse zooms",
+      "snapbacks",
+      "camera jitter"
+    ]
+  },
+  "variants": [
+    "Signal Sans",
+    "Signal Editorial"
+  ],
+  "frame": {
+    "vertical": "1080x1920",
+    "horizontal": "1920x1080",
+    "fps": "source-native"
+  },
+  "constraints": {
+    "oneAccentPerFrame": true,
+    "musicByDefault": false,
+    "matchSourceDialogue": true,
+    "approvedLogoAssetRequired": true
+  }
+}
